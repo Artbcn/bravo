@@ -1,0 +1,1837 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BRABO Limpieza · Tareas + Control</title>
+<meta name="theme-color" content="#17313B">
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%2317313B"/><text x="50" y="66" font-size="44" text-anchor="middle" font-family="Arial" font-weight="bold"><tspan fill="%230FA3A3">B</tspan><tspan fill="%23E8A13D">A</tspan></text></svg>'>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FAF8F3; --card:#FFFFFF; --ink:#17313B; --ink-soft:#5C707A;
+  --line:#E4DFD4; --towel:#0FA3A3; --towel-bg:#E4F5F5;
+  --client:#C97F17; --client-bg:#FBF0DD;
+  --dirty:#D96459; --dirty-bg:#FBEBE9; --repaso:#4E7FDB; --repaso-bg:#EAF0FC;
+  --salida:#8A93A6; --ok:#2E9E5B; --ok-bg:#E7F5EC; --muted:#C9C2B4;
+  --arr:#2E9E5B; --dep:#D0483C; --inh:#3B6FD4;
+}
+*{box-sizing:border-box; margin:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:'Outfit',system-ui,sans-serif; background:var(--paper); color:var(--ink);
+  min-height:100vh; padding:0 16px 70px;
+}
+.wrap{max-width:1240px; margin:0 auto}
+header{max-width:1240px; margin:0 auto; padding:24px 0 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+h1{font-size:24px; font-weight:800; letter-spacing:-.02em; white-space:nowrap}
+h1 .a1{color:var(--towel)} h1 .a2{color:var(--client)}
+header .date-pick{margin-left:auto; display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft)}
+header input[type=date]{font-family:'IBM Plex Mono',monospace; font-size:13px; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; background:var(--card); color:var(--ink)}
+#btnInstall{display:none; background:transparent; border:1.5px solid var(--line); color:var(--ink); font-weight:700; border-radius:10px; padding:8px 14px; font-size:13px; cursor:pointer; font-family:inherit}
+
+/* ---- Zona de carga (rehecha: layout estable en móvil y escritorio) ---- */
+.drop{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  border:1.5px dashed var(--line); border-radius:12px; background:var(--card);
+  padding:9px 12px; width:100%; transition:border-color .15s, background .15s;
+}
+.drop.over{border-color:var(--towel); background:#F0FAFA}
+.drop-lbl{
+  font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.07em;
+  color:var(--ink-soft); flex-shrink:0;
+}
+.drop-hint{font-size:11.5px; color:var(--muted); margin-left:auto; flex-shrink:0}
+.drop input{display:none}
+.files{display:flex; gap:7px; flex-wrap:wrap}
+.file-chip{
+  display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+  font-size:12px; font-weight:700; padding:5px 9px; border-radius:8px;
+  border:1.5px solid; background:var(--card); white-space:nowrap;
+  transition:transform .08s, background .15s;
+}
+.file-chip:active{transform:scale(.96)}
+.file-chip .fn{
+  font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; opacity:.65;
+  max-width:88px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.file-chip.arr{color:var(--arr); border-color:#BEE3CC}
+.file-chip.dep{color:var(--dep); border-color:#F3CFCB}
+.file-chip.inh{color:var(--inh); border-color:#C6D6F5}
+.file-chip.arr.ok{background:var(--arr); color:#fff; border-color:var(--arr)}
+.file-chip.dep.ok{background:var(--dep); color:#fff; border-color:var(--dep)}
+.file-chip.inh.ok{background:var(--inh); color:#fff; border-color:var(--inh)}
+.file-chip.ok .fn{opacity:.85}
+.error{margin-top:12px; background:var(--dirty-bg); color:var(--dirty); border-radius:10px; padding:12px 16px; font-size:14px; display:none}
+.toast{
+  position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(10px);
+  background:var(--ink); color:#fff; font-weight:700; font-size:13.5px;
+  padding:11px 18px; border-radius:12px; box-shadow:0 6px 20px rgba(23,49,59,.28);
+  opacity:0; pointer-events:none; transition:opacity .18s, transform .18s; z-index:60;
+  max-width:calc(100% - 32px); text-align:center;
+}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+.toast.add{background:var(--ok)}
+.toast.rm{background:var(--dep)}
+
+/* ---- Pestañas ---- */
+.tabs{display:flex; gap:0; margin:18px 0 16px; border:1.5px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card)}
+.tabs button{
+  flex:1; font-family:inherit; font-size:13.5px; font-weight:700; border:none; background:transparent;
+  color:var(--ink-soft); padding:11px 6px; cursor:pointer; border-right:1.5px solid var(--line);
+}
+.tabs button:last-child{border-right:none}
+.tabs button.on{background:var(--ink); color:#fff}
+.tabs button:focus-visible{outline:3px solid var(--towel); outline-offset:-3px}
+.panel{display:none}
+.panel.on{display:block}
+.hint{background:var(--card); border:1px dashed var(--line); border-radius:14px; padding:22px; text-align:center; color:var(--ink-soft); font-size:14px}
+
+/* ---- Genéricos ---- */
+button{font-family:inherit; cursor:pointer}
+.bar{display:flex; align-items:center; gap:10px; margin:0 0 12px; flex-wrap:wrap}
+.bar .count{font-size:14px; color:var(--ink-soft)}
+.bar .count b{color:var(--ink)}
+.btn{font-size:13.5px; font-weight:700; border:none; border-radius:10px; padding:10px 16px; transition:transform .08s}
+.btn:active{transform:scale(.97)}
+.btn:focus-visible{outline:3px solid var(--towel); outline-offset:2px}
+.btn-primary{background:var(--ink); color:#fff}
+.btn-ghost{background:transparent; color:var(--ink-soft); border:1.5px solid var(--line)}
+.btn-img{background:var(--client); color:#fff}
+.btn-copy{background:var(--ink); color:#fff}
+.btn-copy.copied{background:var(--ok)}
+.table-card{background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:auto}
+table{border-collapse:collapse; width:100%; font-size:13px}
+th{text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft);
+  padding:11px 9px; border-bottom:1.5px solid var(--line); position:sticky; top:0; background:var(--card); white-space:nowrap}
+td{padding:8px 9px; border-bottom:1px solid #F0ECE3; vertical-align:middle; white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.hab{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:13.5px; background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:3px 8px; display:inline-block}
+.legend{display:flex; gap:16px; margin-top:12px; font-size:12.5px; color:var(--ink-soft); flex-wrap:wrap}
+.legend span::before{content:''; display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px}
+.legend .l-sucia::before{background:var(--dirty)}
+.legend .l-repaso::before{background:var(--repaso)}
+.legend .l-t::before{background:var(--towel)}
+.legend .l-c::before{background:var(--client)}
+.legend .l-ll::before{background:var(--arr)}
+.legend .l-sa::before{background:var(--dep)}
+.notes-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-top:16px}
+.notes-card label{display:block; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-soft); font-weight:700; margin-bottom:8px}
+.notes-card textarea{
+  width:100%; font-family:inherit; font-size:14px; color:var(--ink); background:var(--paper);
+  border:1.5px solid var(--line); border-radius:10px; padding:10px 12px; resize:vertical;
+}
+.notes-card textarea:focus{outline:none; border-color:var(--towel); background:#fff}
+.notes-card p{font-size:12px; color:var(--ink-soft); margin-top:6px}
+
+/* ---- Pestaña TAREAS ---- */
+#tblTareas{min-width:980px}
+.tipo{
+  font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+  border-radius:8px; padding:5px 10px; display:inline-block; white-space:nowrap; border:1.5px solid;
+}
+.tipo.llegada{color:#fff; background:var(--arr); border-color:var(--arr)}
+.tipo.salida{color:#4C5763; background:#EDEFF2; border-color:#DBDFE5}
+.prio-in{text-align:center; font-family:'IBM Plex Mono',monospace; font-weight:700}
+.prio-in.p1{background:var(--arr)!important; color:#fff!important; border-color:var(--arr)!important}
+.obs-tag{font-size:12px; font-weight:700; border-radius:999px; padding:4px 12px; border:none; font-family:inherit}
+.obs-tag.sucia{background:var(--dirty-bg); color:var(--dirty)}
+.obs-tag.repaso{background:var(--repaso-bg); color:var(--repaso)}
+td input[type=text]{
+  font-family:inherit; font-size:13px; border:1px solid transparent; border-radius:7px;
+  padding:5px 7px; width:100%; min-width:64px; background:transparent; color:var(--ink);
+}
+td input[type=text]:hover{border-color:var(--line)}
+td input[type=text]:focus{border-color:var(--towel); outline:none; background:#fff}
+.pax{font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--ink-soft)}
+.del{background:none; border:none; color:var(--line); font-size:16px; padding:2px 6px}
+.del:hover{color:var(--dirty)}
+.sort{margin-left:auto; display:flex; border:1.5px solid var(--line); border-radius:10px; overflow:hidden}
+.sort button{border:none; border-radius:0; background:var(--card); color:var(--ink-soft); font-weight:600; font-size:13px; padding:8px 14px}
+.sort button.on{background:var(--ink); color:#fff}
+.empty{padding:36px; text-align:center; color:var(--ink-soft); font-size:14px}
+
+/* ---- Pestaña CALENDARIO ---- */
+#tblCal{min-width:1100px}
+.dt{font-family:'IBM Plex Mono',monospace; font-size:12.5px}
+.dt.t{color:var(--towel); font-weight:600}
+.dt.c{color:var(--client); font-weight:600}
+.dt.today-mark{text-decoration:underline; text-underline-offset:3px}
+.no{color:var(--muted)}
+.si{font-weight:700}
+tr.hl td{background:#FDFBF4}
+.prev{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-top:20px}
+.prev h3{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-soft); margin-bottom:12px}
+.prev-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(92px,1fr)); gap:10px}
+.pd{text-align:center; border:1px solid var(--line); border-radius:12px; padding:10px 4px}
+.pd .pdate{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:6px}
+.pd .nums{display:flex; justify-content:center; gap:10px; font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600}
+.pd .nums .t{color:var(--towel)} .pd .nums .c{color:var(--client)}
+.pd .nums .xstar{color:var(--client); font-size:11px; font-weight:800; vertical-align:super; margin-left:1px}
+.pd .metrics{display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; margin-top:6px}
+.pd .m{display:flex; align-items:center; justify-content:center; gap:4px;
+  font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600}
+.pd .m .ml{font-family:'Outfit',sans-serif; font-size:9px; font-weight:800; letter-spacing:.03em;
+  text-transform:uppercase; color:var(--ink-soft)}
+.pd .m.t{color:var(--towel)} .pd .m.c{color:var(--client)}
+.pd .m.a{color:var(--arr)} .pd .m.s{color:var(--dep)}
+.pd .m.z{color:var(--muted)}
+.pd .xstar{color:var(--client); font-size:10px; font-weight:800; vertical-align:super}
+.pd.has-extra{border-color:var(--client); background:#FEFBF5}
+.dchips{display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-start}
+
+/* ---- Historial ---- */
+.hcard{
+  background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 16px;
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;
+}
+.hcard .hdate{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:15px; min-width:104px}
+.hcard .hinfo{font-size:13px; color:var(--ink-soft); flex:1; min-width:150px}
+.hcard .hact{display:flex; gap:7px; flex-wrap:wrap}
+.hcard button{font-size:12px; font-weight:700; border-radius:999px; padding:6px 12px; border:1.5px solid var(--line); background:var(--paper); color:var(--ink-soft); font-family:inherit}
+.hcard button.pri{background:var(--ink); border-color:var(--ink); color:#fff}
+.hcard button.dan:hover{border-color:var(--dirty); color:var(--dirty)}
+.hcard.cur{border-color:var(--towel); border-width:1.5px}
+.hcard .tag{font-size:10.5px; font-weight:800; letter-spacing:.05em; color:var(--towel); text-transform:uppercase}
+.restored{
+  display:none; background:var(--ok-bg); color:#1F7A45; border-radius:10px;
+  padding:10px 14px; font-size:13px; margin-top:12px;
+}
+.restored button{background:none; border:none; color:#1F7A45; font-weight:700; text-decoration:underline; font-size:13px; padding:0; margin-left:8px; font-family:inherit}
+.fixed-date{
+  display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-soft);
+  background:var(--paper); border:1.5px solid var(--line); border-radius:10px; padding:7px 12px;
+}
+.fixed-date b{font-family:'IBM Plex Mono',monospace; color:var(--ink); font-weight:600}
+.fd-note{font-size:11px; color:var(--muted)}
+.base-note{font-size:11.5px; color:var(--muted)}
+#btnReset{
+  font-size:12.5px; font-weight:700; border:1.5px solid var(--line); background:transparent;
+  color:var(--ink-soft); border-radius:10px; padding:8px 14px; font-family:inherit; cursor:pointer;
+}
+#btnReset:hover{border-color:var(--dirty); color:var(--dirty)}
+
+/* ---- Pestaña HOY ---- */
+.hoy-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px}
+.hoy-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; min-width:0}
+.hoy-card > h3{font-size:12px; text-transform:uppercase; letter-spacing:.08em; font-weight:800; margin-bottom:3px}
+.hoy-card.tw > h3{color:var(--towel)} .hoy-card.cl > h3{color:var(--client)}
+.hoy-card .sub{font-size:12.5px; color:var(--ink-soft); margin-bottom:12px}
+.ev{
+  display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+  border:1px solid var(--line); border-radius:12px; padding:9px 10px; margin-bottom:8px;
+}
+.ev.done{border-color:var(--ok); background:var(--ok-bg)}
+.ev.nope{border-color:var(--dep); background:#FBEBE9}
+.nope-btn{
+  font-size:12px; font-weight:700; border-radius:999px; padding:6px 12px;
+  border:1.5px solid var(--line); background:var(--paper); color:var(--ink-soft); font-family:inherit; cursor:pointer;
+}
+.nope-btn.on{background:var(--dep); border-color:var(--dep); color:#fff}
+.nope-btn:hover{border-color:var(--dep); color:var(--dep)}
+.nope-btn.on:hover{color:#fff}
+.ev.extra{border-style:dashed}
+.xtag{
+  font-size:10.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--client); background:var(--client-bg); border-radius:6px; padding:3px 7px; flex-shrink:0;
+}
+.who-empty{color:var(--muted)}
+.del-extra{
+  font-size:14px; font-weight:700; border:none; background:none; color:var(--muted);
+  cursor:pointer; padding:2px 6px; line-height:1;
+}
+.del-extra:hover{color:var(--dep)}
+.add-extra{
+  width:100%; margin-top:4px; font-family:inherit; font-size:13px; font-weight:700;
+  color:var(--client); background:transparent; border:1.5px dashed var(--client-bg);
+  border-radius:12px; padding:10px; cursor:pointer;
+}
+.add-extra:hover{background:var(--client-bg); border-color:var(--client)}
+.extra-form{
+  display:flex; gap:7px; flex-wrap:wrap; align-items:center; margin-top:8px;
+  background:var(--paper); border:1.5px solid var(--line); border-radius:12px; padding:10px;
+}
+.extra-form input, .extra-form select{
+  font-family:inherit; font-size:13.5px; border:1.5px solid var(--line); border-radius:8px;
+  padding:7px 9px; background:#fff; color:var(--ink);
+}
+.extra-form .xf-hab{width:74px; font-family:'IBM Plex Mono',monospace}
+.extra-form .xf-name{flex:1; min-width:120px}
+.extra-form .xf-ok{
+  font-family:inherit; font-size:13px; font-weight:700; border:none; border-radius:8px;
+  padding:8px 14px; background:var(--client); color:#fff; cursor:pointer;
+}
+.extra-form .xf-cancel{
+  font-family:inherit; font-size:13px; font-weight:700; border:1.5px solid var(--line);
+  border-radius:8px; padding:8px 12px; background:transparent; color:var(--ink-soft); cursor:pointer;
+}
+.ev .who{font-size:13px; color:var(--ink-soft); flex:1; min-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.ev .hora{font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600}
+.ev select{
+  font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600; color:var(--client);
+  border:1.5px solid var(--line); border-radius:8px; padding:4px 6px; background:var(--paper);
+}
+.conf{
+  font-size:12px; font-weight:700; border-radius:999px; padding:6px 12px; border:1.5px solid var(--line);
+  background:var(--paper); color:var(--ink-soft); font-family:inherit;
+}
+.conf.on{background:var(--ok); border-color:var(--ok); color:#fff}
+.msg-btn{
+  font-size:12px; font-weight:700; border-radius:999px; padding:6px 12px; border:none;
+  background:var(--ink); color:#fff; font-family:inherit;
+}
+.msg-btn.copied{background:var(--ok)}
+.ev .acts{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.copy-all{margin-top:4px; font-size:12.5px; font-weight:700; border:1.5px solid var(--line); background:transparent; color:var(--ink-soft); border-radius:10px; padding:7px 12px}
+.none{font-size:13px; color:var(--muted); padding:6px 2px}
+.tpl-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-top:16px}
+.tpl-card h3{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-soft); font-weight:800; margin-bottom:4px}
+.tpl-card .sub{font-size:12.5px; color:var(--ink-soft); margin-bottom:12px}
+.tpl-card label{display:block; font-size:12px; font-weight:700; margin:10px 0 6px}
+.tpl-card label.lt{color:var(--towel)} .tpl-card label.lc{color:var(--client)}
+.tpl-card textarea{
+  width:100%; font-family:inherit; font-size:13.5px; color:var(--ink); background:var(--paper);
+  border:1.5px solid var(--line); border-radius:10px; padding:10px 12px; resize:vertical;
+}
+.tpl-card textarea:focus{outline:none; border-color:var(--towel); background:#fff}
+.parte-bar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px}
+.parte-bar .tip{font-size:12.5px; color:var(--ink-soft)}
+
+@media (max-width:820px){
+  h1{font-size:20px}
+  header{padding-top:18px}
+  header .date-pick{margin-left:0; width:100%}
+  .hoy-grid{grid-template-columns:1fr}
+  .tabs button{font-size:12px; padding:10px 4px}
+  .drop{padding:8px 10px; gap:8px}
+  .drop-hint{display:none}
+  .file-chip .fn{max-width:70px}
+}
+@media print{
+  body{padding:0; background:#fff}
+  .drop,.bar,.tabs,.prev,header .date-pick,.parte-bar,.tpl-card{display:none}
+  .table-card{border:none}
+  .panel{display:block}
+}
+</style>
+</head>
+<body>
+<!-- ===== PIN de acceso ===== -->
+<div id="pinGate" style="position:fixed;inset:0;z-index:99999;background:#17313B;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Outfit',system-ui,sans-serif;color:#FAF8F3;padding:24px;box-sizing:border-box">
+  <div style="font-size:22px;font-weight:700;margin-bottom:6px">BRABO Control</div>
+  <div style="font-size:14px;opacity:.7;margin-bottom:24px">Acceso del personal</div>
+  <input id="pinInput" type="password" inputmode="text" autocomplete="off"
+    placeholder="PIN"
+    style="font-size:20px;text-align:center;padding:12px 16px;border-radius:12px;border:none;width:200px;max-width:80vw;font-family:'IBM Plex Mono',monospace;letter-spacing:2px"
+    onkeydown="if(event.key==='Enter')checkPin()">
+  <div id="pinError" style="color:#FF9B9B;font-size:13px;height:18px;margin-top:10px"></div>
+  <button onclick="checkPin()"
+    style="margin-top:8px;font-size:16px;font-weight:600;padding:12px 28px;border-radius:12px;border:none;background:#FAF8F3;color:#17313B;cursor:pointer">
+    Entrar
+  </button>
+</div>
+<script>
+(function(){
+  var PIN = "BRAVO26"; /* <-- CAMBIA ESTO por tu PIN */
+  var KEY = "brabo_pin_ok";
+  function unlock(){ var g=document.getElementById('pinGate'); if(g) g.remove(); }
+  if(sessionStorage.getItem(KEY)==="1"){ unlock(); }
+  window.checkPin=function(){
+    var v=document.getElementById('pinInput').value.trim();
+    if(v===PIN){ sessionStorage.setItem(KEY,"1"); unlock(); }
+    else{ document.getElementById('pinError').textContent="PIN incorrecto"; }
+  };
+  var i=document.getElementById('pinInput'); if(i) i.focus();
+})();
+</script>
+<!-- ===== fin PIN ===== -->
+<header>
+  <h1>BRABO <span class="a1">Lim</span><span class="a2">pieza</span></h1>
+  <div class="date-pick">
+    <label for="refDate">Día base</label>
+    <input type="date" id="refDate">
+    <span class="base-note">todo el parte —tareas, toallas y limpiezas— sale para el día siguiente</span>
+  </div>
+  <button id="btnReset" title="Borra los informes cargados y las tareas en pantalla. El historial no se toca.">🗑 Borrar todo</button>
+  <button id="btnInstall">⤓ Instalar app</button>
+</header>
+
+<div class="wrap">
+  <div class="drop" id="drop">
+    <span class="drop-lbl">Informes</span>
+    <div class="files">
+      <label class="file-chip arr" id="chip-arr" for="fi-arr">Arrival <span style="opacity:.6;font-weight:600">(opcional)</span><span class="fn">—</span></label>
+      <label class="file-chip dep" id="chip-dep" for="fi-dep">Departure <span style="opacity:.6;font-weight:600">(opcional)</span><span class="fn">—</span></label>
+      <label class="file-chip inh" id="chip-inh" for="fi-inh">In House<span class="fn">—</span></label>
+    </div>
+    <span class="drop-hint">tocá cada uno o arrastrá los .xlsx acá</span>
+    <input type="file" id="fi-arr" accept=".xlsx,.xls">
+    <input type="file" id="fi-dep" accept=".xlsx,.xls">
+    <input type="file" id="fi-inh" accept=".xlsx,.xls">
+    <input type="file" id="fileInput" accept=".xlsx,.xls" multiple>
+  </div>
+
+  <div class="error" id="error"></div>
+  <div class="restored" id="restored"></div>
+
+  <div class="tabs" role="tablist">
+    <button id="tabBtnHoy" class="on">Toallas y limpiezas</button>
+    <button id="tabBtnTareas">Tareas pisos</button>
+    <button id="tabBtnCal">Calendario limpieza</button>
+    <button id="tabBtnHist">Historial</button>
+  </div>
+
+  <!-- ============ HOY · MENSAJES ============ -->
+  <div class="panel on" id="panelHoy">
+    <div class="hint" id="hoyHint">Cargá el informe <b>In House</b> para ver los cambios de toalla y limpiezas de cliente del parte, confirmarlos y generar los mensajes.</div>
+    <div id="hoyBody" style="display:none">
+      <div class="parte-bar">
+        <span class="fixed-date" title="Sale sola: la fecha base de arriba + 1 día.">
+          🔒 Parte del <b id="tareasDateLbl2"></b> <span class="fd-note">(día base + 1)</span>
+        </span>
+        <button class="btn btn-copy" id="btnParteCopy">📋 Copiar imagen</button>
+        <button class="btn btn-img" id="btnParte">📤 Enviar por WhatsApp</button>
+        <button class="btn btn-ghost" id="btnParteDl">⤓ Descargar imagen</button>
+        <span class="tip">Copiar es lo más rápido en la computadora: la pegás en WhatsApp con Ctrl+V. La imagen trae tareas + toallas + limpiezas + previsión.</span>
+      </div>
+      <div class="hoy-grid">
+        <div class="hoy-card tw">
+          <h3>Cambio de toallas</h3>
+          <div class="sub">Ventana fija: entre <b>11:00 y 16:00</b></div>
+          <div id="listTowels"></div>
+          <button class="copy-all" id="copyAllTw">Copiar todos los mensajes de toallas</button>
+        </div>
+        <div class="hoy-card cl">
+          <h3>Limpieza de cliente</h3>
+          <div class="sub">Turnos de <b>10:00 · 11:00 · 12:00 · 13:00</b> — se asignan priorizando el más temprano. Podés cambiarlo en cada fila.</div>
+          <div id="listClients"></div>
+          <button class="copy-all" id="copyAllCl">Copiar todos los mensajes de limpieza</button>
+        </div>
+      </div>
+      <div class="tpl-card">
+        <h3>Mensajes predeterminados</h3>
+        <div class="sub">Se rellenan solos: <b>{HAB}</b> apartamento · <b>{HORA}</b> hora o ventana · <b>{FECHA}</b> fecha del parte. Se guardan en este dispositivo.</div>
+        <label class="lt" for="tplTowel">Mensaje de cambio de toallas</label>
+        <textarea id="tplTowel" rows="5"></textarea>
+        <label class="lc" for="tplClean">Mensaje de limpieza de cliente</label>
+        <textarea id="tplClean" rows="5"></textarea>
+        <button class="copy-all" id="tplReset" style="margin-top:10px">Restaurar mensajes originales</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAREAS PISOS ============ -->
+  <div class="panel" id="panelTareas">
+    <div class="hint" id="tareasHint">Cargá el informe <b>Arrival</b> y/o <b>Departure</b> (los dos son opcionales, según lo que tengas ese día) para armar las tareas del equipo.</div>
+    <div id="tareasBody" style="display:none">
+      <div class="bar">
+        <span class="count" id="countTareas"></span>
+        <span class="fixed-date" title="Sale sola: la fecha base de arriba + 1 día. No se edita a mano.">
+          🔒 Informe del <b id="tareasDateLbl"></b> <span class="fd-note">(día base + 1)</span>
+        </span>
+        <div class="sort" role="group" aria-label="Orden">
+          <button id="sortPrio" class="on">Por prioridad</button>
+          <button id="sortHab">Por apartamento</button>
+          <button id="sortAlf">Alfabético</button>
+        </div>
+        <button class="btn btn-copy" id="btnImgTareasCopy">📋 Copiar imagen</button>
+        <button class="btn btn-img" id="btnImgTareas">📤 Enviar</button>
+        <button class="btn btn-ghost" id="btnImgTareasDl">⤓ Descargar</button>
+        <button class="btn btn-primary" id="btnXlsTareas">Descargar Excel</button>
+      </div>
+      <div class="table-card">
+        <table id="tblTareas">
+          <thead><tr>
+            <th></th><th>Hab</th><th>Tipo</th><th>Huésped</th><th>Llegada</th><th>Salida</th>
+            <th>Hora lleg</th><th title="Adultos/Juniors/Niños/Infantes">Pax A·J·N·I</th>
+            <th>Cama</th><th>Priori</th><th>Observa</th><th>Hora salida</th><th>Comentarios recep</th>
+          </tr></thead>
+          <tbody id="tbodyTareas"></tbody>
+        </table>
+        <div class="empty" id="emptyTareas" style="display:none">Sin movimientos para mañana.</div>
+      </div>
+      <div class="legend">
+        <span class="l-sucia"><b>Sucia</b>: salida (con o sin llegada detrás)</span>
+        <span class="l-repaso"><b>Repaso</b>: llegada sin salida previa — revisar que esté todo ok</span>
+        <span>Tocá la etiqueta de Observa para alternar sucia / repaso</span>
+      </div>
+      <div class="notes-card">
+        <label for="notesTareas">Notas para el equipo</label>
+        <textarea id="notesTareas" rows="3" placeholder="Ej.: dejar cuna en 205 · revisar aire del 103 · llaves del 405 en recepción…"></textarea>
+        <p>Se agregan al final del Excel y de la imagen del parte, una línea por nota.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CALENDARIO LIMPIEZA ============ -->
+  <div class="panel" id="panelCal">
+    <div class="hint" id="calHint">Cargá el informe <b>In House</b> para calcular toallas y limpiezas de cada estancia.</div>
+    <div id="calBody" style="display:none">
+      <div class="bar">
+        <span class="count" id="countCal"></span>
+        <button class="btn btn-ghost" onclick="window.print()">Imprimir</button>
+        <button class="btn btn-primary" id="btnXlsCal" style="margin-left:auto">Descargar Excel</button>
+      </div>
+      <div class="table-card">
+        <table id="tblCal">
+          <thead><tr>
+            <th>Hab</th><th>Nombre</th><th>Check-in</th><th>Check-out</th><th>Noches</th>
+            <th>Toallas (cada 3 días)</th><th>Limpiezas de cliente (7+ noches)</th><th>Comentarios</th>
+          </tr></thead>
+          <tbody id="tbodyCal"></tbody>
+        </table>
+      </div>
+      <div class="legend">
+        <span class="l-t"><b>Toallas</b>: cambio de toallas</span>
+        <span class="l-c"><b>Cliente</b>: limpieza de cliente</span>
+        <span>La fecha subrayada cae en el día del parte</span>
+      </div>
+      <div class="notes-card">
+        <label for="notesCal">Notas generales</label>
+        <textarea id="notesCal" rows="3" placeholder="Ej.: el apto 3 pidió toallas extra · faltan sábanas en el office…"></textarea>
+        <p>Se agregan al final del Excel, una línea por nota.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ HISTORIAL ============ -->
+  <div class="panel" id="panelHist">
+    <div class="bar">
+      <span class="count" id="countHist"></span>
+      <button class="btn btn-primary" id="btnXlsHist" style="margin-left:auto">Descargar historial completo (Excel)</button>
+    </div>
+    <div id="histList"></div>
+    <div class="notes-card">
+      <p style="margin-top:0">Cada día que armás las tareas se archiva solo acá, con sus comentarios y notas. El <b>Excel del historial</b> trae una hoja por día más una hoja "Resumen" con todo junto — ese es el archivo para guardar y consultar cuando haya que revisar algo.</p>
+      <p>Se guarda en este dispositivo y en este navegador. Si formateás la PC o cambiás de navegador, se pierde — por eso conviene bajar el Excel del historial cada tanto (una vez por mes alcanza) y guardarlo en una carpeta o en el Drive.</p>
+    </div>
+  </div>
+
+  <!-- ============ PREVISIÓN (siempre abajo, en todas las pestañas) ============ -->
+  <div class="prev" id="prevBox" style="display:none">
+    <h3>Previsión próximos 7 días</h3>
+    <div class="prev-grid" id="prevGrid"></div>
+    <div class="legend" style="margin-top:12px">
+      <span class="l-t">T · cambios de toalla</span>
+      <span class="l-c">C · limpiezas de cliente</span>
+      <span style="color:var(--dep)">● S · salidas previstas</span>
+      <span style="color:var(--ink-soft)"><b style="color:var(--client)">+</b> incluye limpiezas extra agregadas a mano</span>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+/* serialización que respeta las fechas (Date) */
+function serialize(o){
+  return JSON.stringify(o, function(k, v){
+    const raw = this[k];
+    return raw instanceof Date ? { __d: raw.getTime() } : v;
+  });
+}
+function deserialize(s){
+  return JSON.parse(s, (k, v) => (v && typeof v === 'object' && typeof v.__d === 'number') ? new Date(v.__d) : v);
+}
+
+/* ================= estado ================= */
+let arrivalRows = null, departureRows = null, tasks = [], sortMode = 'prio';
+let guests = [];
+const SLOTS = ['10:00','11:00','12:00','13:00'];
+const TOWEL_WINDOW = '11:00-16:00';
+const DEF_TPL_TOWEL = 'Hola! El {FECHA} pasaremos por su apartamento ({HAB}) para el cambio de toallas, en la franja de {HORA} h. No hace falta que esté presente: es solo un aviso. Si ese día no le viene bien o no encaja con sus planes, escríbanos por este mismo medio. Gracias!\n\nHello! On {FECHA} we will come by your apartment ({HAB}) for the towel change, between {HORA}. You do not need to be there — this is just to let you know. If that day does not suit you or does not fit your plans, please write to us through this same channel. Thank you!\n\n— Brabo Apartments';
+const DEF_TPL_CLEAN = 'Hola! El {FECHA} realizaremos la limpieza de su apartamento ({HAB}) a las {HORA} h. No hace falta que esté presente: es solo un aviso. Si ese día o ese horario no le vienen bien o no encajan con sus planes, escríbanos por este mismo medio. Gracias!\n\nHello! On {FECHA} we will clean your apartment ({HAB}) at {HORA}. You do not need to be there — this is just to let you know. If that day or time does not suit you or does not fit your plans, please write to us through this same channel. Thank you!\n\n— Brabo Apartments';
+
+/* Textos por defecto de versiones anteriores. Si lo guardado coincide con alguno,
+   es que nunca lo editaste: lo actualizamos solo en vez de dejarte un texto viejo. */
+const OLD_TPL_TOWEL = [
+  'Hola! Hoy {FECHA} pasaremos por su apartamento ({HAB}) para el cambio de toallas, entre las {HORA} h. Gracias!\nHello! Today {FECHA} we will stop by your apartment ({HAB}) for the towel change, between {HORA}. Thank you!\n— Brabo Apartments',
+  'Hola! El {FECHA} pasaremos por su apartamento ({HAB}) para el cambio de toallas, entre las {HORA} h. Gracias!\nHello! On {FECHA} we will stop by your apartment ({HAB}) for the towel change, between {HORA}. Thank you!\n— Brabo Apartments',
+];
+const OLD_TPL_CLEAN = [
+  'Hola! Hoy {FECHA} realizaremos la limpieza de su apartamento ({HAB}) a las {HORA} h. Si el horario no le viene bien, avísenos por este medio. Gracias!\nHello! Today {FECHA} we will clean your apartment ({HAB}) at {HORA}. If that time does not suit you, please let us know. Thank you!\n— Brabo Apartments',
+  'Hola! El {FECHA} realizaremos la limpieza de su apartamento ({HAB}) a las {HORA} h. Si el horario no le viene bien, avísenos por este medio. Gracias!\nHello! On {FECHA} we will clean your apartment ({HAB}) at {HORA}. If that time does not suit you, please let us know. Thank you!\n— Brabo Apartments',
+];
+function loadTpl(key, def, olds){
+  const v = lsGet(key, null);
+  if (v === null || olds.includes(v)){ lsSet(key, def); return def; }  /* sin tocar -> al día */
+  return v;   /* lo personalizaste: no te lo piso */
+}
+
+/* ================= fechas ================= */
+function parseDate(v){
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  if (typeof v === 'number'){
+    const ms = Math.round((v - 25569) * 86400000);
+    const d = new Date(ms);
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+  const m = String(v).trim().match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (m){ let y=+m[3]; if (y<100) y+=2000; return new Date(y, +m[2]-1, +m[1]); }
+  const d2 = new Date(v);
+  return isNaN(d2) ? null : new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
+}
+const pad = n => String(n).padStart(2,'0');
+const fmt = d => d ? `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}` : '';
+const fmtShort = d => `${pad(d.getDate())}/${pad(d.getMonth()+1)}`;
+const addDays = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+const same = (a,b) => a && b && a.getTime() === b.getTime();
+const toISO = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const fromISO = iso => { const [y,m,d] = String(iso).split('-').map(Number); return new Date(y, m-1, d); };
+
+const todayLocal = new Date(); todayLocal.setHours(0,0,0,0);
+$('refDate').value = toISO(todayLocal);
+function refDate(){ return fromISO($('refDate').value); }
+$('refDate').addEventListener('change', () => {
+  const prev = syncTareasDate();
+  /* si el informe cambió de fecha, movemos lo archivado en vez de dejar un duplicado */
+  if (prev !== tareasISO && archivedISO === prev){
+    try{ localStorage.removeItem(HKEY + prev); }catch(e){}
+    archivedISO = null;
+  }
+  renderCal(); renderHoy(); saveState(); renderHist();
+});
+
+/* fecha del informe: SIEMPRE la fecha base de arriba + 1 día. No se edita a mano:
+   se mueve sola cuando cambiás la base. */
+let tareasISO = toISO(addDays(todayLocal, 1));
+let archivedISO = null;   /* bajo qué fecha quedó archivado lo que hay en pantalla */
+function tareasDate(){ return fromISO(tareasISO); }
+function paintTareasDate(){
+  const txt = tareasDate().toLocaleDateString('es-ES', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'});
+  for (const id of ['tareasDateLbl', 'tareasDateLbl2']) $(id).textContent = txt;
+}
+/* recalcula el informe a partir de la base; devuelve la fecha anterior */
+function syncTareasDate(){
+  const prev = tareasISO;
+  tareasISO = toISO(addDays(refDate(), 1));
+  paintTareasDate();
+  return prev;
+}
+function setBaseDate(d){
+  $('refDate').value = toISO(d);
+  syncTareasDate();
+}
+syncTareasDate();
+
+/* ================= almacenamiento local (confirmaciones, turnos, plantillas) ================= */
+function lsGet(k, fallback){ try{ const v = localStorage.getItem(k); return v == null ? fallback : JSON.parse(v); }catch(e){ return fallback; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+/* todo se archiva bajo la fecha del informe (base + 1), que es el día al que corresponde el parte */
+const confKey = () => 'brabo-conf-' + tareasISO;
+const slotKey = () => 'brabo-slot-' + tareasISO;
+/* estado de cada aviso: '' pendiente · 'ok' confirmado · 'no' el huésped no quiere
+   (el 1 viejo de versiones anteriores se lee como 'ok') */
+function confState(hab, tipo){
+  const v = lsGet(confKey(), {})[hab + '|' + tipo];
+  return v === 1 ? 'ok' : (v || '');
+}
+function setConf(hab, tipo, val){
+  const o = lsGet(confKey(), {});
+  const k = hab + '|' + tipo;
+  if (!val) delete o[k]; else o[k] = val;
+  lsSet(confKey(), o);
+}
+/* tocar el mismo botón otra vez lo devuelve a pendiente */
+function toggleConf(hab, tipo, val){
+  setConf(hab, tipo, confState(hab, tipo) === val ? '' : val);
+}
+function isConfirmed(hab, tipo){ return confState(hab, tipo) === 'ok'; }
+function slotFor(hab, def){ const o = lsGet(slotKey(), {}); return o[hab] || def; }
+function setSlot(hab, val){ const o = lsGet(slotKey(), {}); o[hab] = val; lsSet(slotKey(), o); }
+
+/* limpiezas extra agregadas a mano (reprogramaciones), guardadas por fecha de informe */
+const extraKey = () => 'brabo-extra-' + tareasISO;
+function extraCleans(){ return lsGet(extraKey(), []); }
+function addExtraClean(hab, huesped, hora){
+  const list = extraCleans();
+  list.push({ hab: String(hab).trim(), huesped: String(huesped || '').trim(), hora, extra: true });
+  lsSet(extraKey(), list);
+}
+function removeExtraClean(idx){
+  const list = extraCleans();
+  list.splice(idx, 1);
+  lsSet(extraKey(), list);
+}
+
+/* cambios de toalla extra agregados a mano, guardados por fecha de informe */
+const extraTwKey = () => 'brabo-extra-tw-' + tareasISO;
+function extraTowels(){ return lsGet(extraTwKey(), []); }
+function addExtraTowel(hab, huesped){
+  const list = extraTowels();
+  list.push({ hab: String(hab).trim(), huesped: String(huesped || '').trim(), extra: true });
+  lsSet(extraTwKey(), list);
+}
+function removeExtraTowel(idx){
+  const list = extraTowels();
+  list.splice(idx, 1);
+  lsSet(extraTwKey(), list);
+}
+
+/* ---- estado completo: sobrevive al cierre del navegador y al reinicio de la PC ---- */
+const SKEY = 'brabo-state';
+const HKEY = 'brabo-hist-';
+let bootDone = false;
+function saveState(){
+  if (!bootDone) return;
+  const st = {
+    v: 4, tasks, guests,
+    notesTareas: $('notesTareas').value,
+    notesCal: $('notesCal').value,
+    baseISO: $('refDate').value,
+    archivedISO,
+    chips: { arr: chipName('chip-arr'), dep: chipName('chip-dep'), inh: chipName('chip-inh') },
+    savedAt: Date.now()
+  };
+  try{ localStorage.setItem(SKEY, serialize(st)); }
+  catch(e){ showError('No pude guardar los datos: el navegador se quedó sin espacio. Bajá el Excel del historial y borrá días viejos en la pestaña Historial.'); }
+  archiveDay();
+}
+function archiveDay(){
+  if (!tasks.length) return;
+  const iso = tareasISO;
+  if (!iso) return;
+  const snap = { iso, tasks, notes: $('notesTareas').value, savedAt: Date.now() };
+  try{ localStorage.setItem(HKEY + iso, serialize(snap)); archivedISO = iso; }catch(e){}
+}
+function histList(){
+  const out = [];
+  for (let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if (!k || !k.startsWith(HKEY)) continue;
+    try{ out.push(deserialize(localStorage.getItem(k))); }catch(e){}
+  }
+  out.sort((a, b) => b.iso.localeCompare(a.iso));
+  return out;
+}
+function loadState(){
+  let st = null;
+  try{ const raw = localStorage.getItem(SKEY); if (raw) st = deserialize(raw); }catch(e){}
+  if (!st) return;
+  tasks = st.tasks || [];
+  guests = st.guests || [];
+  if (st.notesTareas) $('notesTareas').value = st.notesTareas;
+  if (st.notesCal) $('notesCal').value = st.notesCal;
+  if (st.baseISO){ $('refDate').value = st.baseISO; }
+  else if (st.tareasISO){ $('refDate').value = toISO(addDays(fromISO(st.tareasISO), -1)); }   /* versiones viejas */
+  syncTareasDate();
+  archivedISO = st.archivedISO || null;
+  if (st.chips){
+    for (const [id, txt] of [['chip-arr', st.chips.arr], ['chip-dep', st.chips.dep], ['chip-inh', st.chips.inh]]){
+      if (txt && txt !== '—' && txt !== 'pendiente' && txt !== 'opcional') setChip(id, txt);
+    }
+  }
+  if (tasks.length) renderTareas();
+  if (guests.length){ renderCal(); renderHoy(); }
+  if (tasks.length || guests.length){
+    const d = new Date(st.savedAt || Date.now());
+    const box = $('restored');
+    box.textContent = `Datos restaurados de la última sesión — guardados el ${fmtShort(d)} a las ${pad(d.getHours())}:${pad(d.getMinutes())}.`;
+    box.style.display = 'block';
+  }
+}
+/* Borrar todo: limpia lo cargado para arrancar un día nuevo. El historial NO se toca. */
+function resetAll(){
+  if (!confirm('¿Borrar todo lo cargado y empezar un día nuevo?\n\nSe van a borrar: los informes cargados, las tareas, los comentarios, las notas y las confirmaciones de hoy.\n\nEl HISTORIAL de días anteriores NO se toca.')) return;
+  try{
+    localStorage.removeItem(SKEY);
+    for (const k of [confKey(), slotKey(), extraKey(), extraTwKey()]) localStorage.removeItem(k);
+  }catch(e){}
+  location.reload();
+}
+
+/* plantillas */
+$('tplTowel').value = loadTpl('brabo-tpl-towel', DEF_TPL_TOWEL, OLD_TPL_TOWEL);
+$('tplClean').value = loadTpl('brabo-tpl-clean', DEF_TPL_CLEAN, OLD_TPL_CLEAN);
+$('tplTowel').addEventListener('input', () => lsSet('brabo-tpl-towel', $('tplTowel').value));
+$('tplClean').addEventListener('input', () => lsSet('brabo-tpl-clean', $('tplClean').value));
+$('tplReset').addEventListener('click', () => {
+  $('tplTowel').value = DEF_TPL_TOWEL; $('tplClean').value = DEF_TPL_CLEAN;
+  lsSet('brabo-tpl-towel', DEF_TPL_TOWEL); lsSet('brabo-tpl-clean', DEF_TPL_CLEAN);
+});
+function fillTpl(tpl, hab, hora){
+  return tpl.replaceAll('{HAB}', hab).replaceAll('{HORA}', hora).replaceAll('{FECHA}', fmtShort(tareasDate()));
+}
+async function copyText(txt, btn){
+  let ok = false;
+  try{ await navigator.clipboard.writeText(txt); ok = true; }
+  catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = txt; document.body.appendChild(ta); ta.select();
+    try{ ok = document.execCommand('copy'); }catch(_){}
+    ta.remove();
+  }
+  if (btn){
+    const orig = btn.textContent;
+    btn.textContent = ok ? '✓ Copiado' : 'No se pudo copiar';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1600);
+  }
+}
+
+/* ================= lectura de informes ================= */
+function findHeaderRow(rows){
+  for (let i=0; i<Math.min(rows.length,10); i++){
+    const r = (rows[i]||[]).map(c => String(c??'').trim());
+    if (r.includes('Huesped') && (r.includes('Habitacion') || r.includes('Habitación'))) return i;
+  }
+  return -1;
+}
+function colIndex(header, names){
+  for (const n of names){
+    const i = header.findIndex(h => String(h??'').trim() === n);
+    if (i !== -1) return i;
+  }
+  return -1;
+}
+function reportType(wb){
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const a1 = ws['A1'] ? String(ws['A1'].v ?? '') : '';
+  if (/arrival/i.test(a1)) return 'arrival';
+  if (/departure/i.test(a1)) return 'departure';
+  if (/inhouse|in house/i.test(a1)) return 'inhouse';
+  return null;
+}
+function extractRowsTP(ws){
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:null});
+  const hi = findHeaderRow(rows);
+  if (hi === -1) return null;
+  const h = rows[hi].map(c => String(c??'').trim());
+  const cols = {
+    huesped: colIndex(h, ['Huesped']),
+    hab:     colIndex(h, ['Habitacion','Habitación']),
+    llegada: colIndex(h, ['Llegada']),
+    salida:  colIndex(h, ['Salida']),
+    ac:      colIndex(h, ['Adultos','A']),
+    ju:      colIndex(h, ['Juniors','J']),
+    ni:      colIndex(h, ['Ninos','Niños','C']),
+    ini:     colIndex(h, ['Infantes','I']),
+  };
+  const out = [];
+  for (let i=hi+1; i<rows.length; i++){
+    const r = rows[i] || [];
+    const nombre = r[cols.huesped], hab = r[cols.hab];
+    if (nombre == null || hab == null || String(nombre).trim()==='') continue;
+    out.push({
+      huesped: String(nombre).replace(/\s+/g,' ').trim(),
+      hab: String(hab).trim(),
+      llegada: parseDate(r[cols.llegada]),
+      salida:  parseDate(r[cols.salida]),
+      ac: cols.ac>=0 ? (r[cols.ac] ?? '') : '',
+      ju: cols.ju>=0 ? (r[cols.ju] ?? '') : '',
+      ni: cols.ni>=0 ? (r[cols.ni] ?? '') : '',
+      ini: cols.ini>=0 ? (r[cols.ini] ?? '') : '',
+    });
+  }
+  return out;
+}
+function extractGuestsCL(ws){
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:null});
+  const hi = findHeaderRow(rows);
+  if (hi === -1) return null;
+  const h = rows[hi].map(c => String(c??'').trim());
+  const cH = colIndex(h,['Huesped']), cR = colIndex(h,['Habitacion','Habitación']),
+        cL = colIndex(h,['Llegada']), cS = colIndex(h,['Salida']);
+  const out = [];
+  for (let i=hi+1; i<rows.length; i++){
+    const r = rows[i]||[];
+    if (r[cH]==null || r[cR]==null || String(r[cH]).trim()==='') continue;
+    const ci = parseDate(r[cL]), co = parseDate(r[cS]);
+    if (!ci || !co) continue;
+    out.push({
+      huesped: String(r[cH]).replace(/\s+/g,' ').trim(),
+      hab: String(r[cR]).trim(),
+      checkin: ci, checkout: co,
+      noches: Math.round((co - ci)/86400000),
+    });
+  }
+  out.sort((a,b) => a.hab.localeCompare(b.hab, undefined, {numeric:true}));
+  return out;
+}
+
+async function handleFiles(fileList, hint){
+  hideError();
+  for (const f of fileList){
+    try{
+      const wb = XLSX.read(await f.arrayBuffer(), {cellDates:true});
+      /* si la celda A1 no lo dice, nos fiamos del botón que tocó */
+      const type = reportType(wb) || hint || null;
+      if (!type){
+        showError(`No reconozco "${f.name}" como Arrival, Departure ni In House. Probá cargándolo con su botón de color en vez de arrastrarlo.`);
+        continue;
+      }
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (type === 'arrival'){
+        const rows = extractRowsTP(ws);
+        if (!rows){ showError(`No encontré la fila de encabezados en "${f.name}".`); continue; }
+        arrivalRows = rows; setChip('chip-arr', f.name);
+      } else if (type === 'departure'){
+        const rows = extractRowsTP(ws);
+        if (!rows){ showError(`No encontré la fila de encabezados en "${f.name}".`); continue; }
+        departureRows = rows; setChip('chip-dep', f.name);
+      } else {
+        const g = extractGuestsCL(ws);
+        if (!g){ showError(`No encontré la fila de encabezados en "${f.name}".`); continue; }
+        guests = g; setChip('chip-inh', f.name);
+      }
+    }catch(e){
+      showError(`No pude leer "${f.name}". ¿Es un .xlsx válido? (${e.message})`);
+    }
+  }
+  if (arrivalRows || departureRows) buildTasks();
+  if (guests.length){ renderCal(); renderHoy(); }
+  saveState();
+}
+function setChip(id, txt){
+  const c = $(id);
+  c.querySelector('.fn').textContent = txt;
+  c.classList.add('ok');
+}
+function chipName(id){ return $(id).querySelector('.fn').textContent; }
+function showError(msg){ const e=$('error'); e.textContent=msg; e.style.display='block'; }
+function hideError(){ $('error').style.display='none'; }
+let toastTimer = null;
+function toast(msg, kind){
+  let t = $('toast');
+  if (!t){ t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.className = 'toast' + (kind ? ' ' + kind : '');
+  void t.offsetWidth;               // reinicia la animación si ya estaba visible
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* ================= TAREAS PISOS ================= */
+/* tipo: si entra alguien es LLEGADA (aunque antes haya salido otro) · si solo sale, SALIDA
+   prioridad automática: llegada = 1 (entra huésped, va primero) · salida = 0 */
+const TIPO_LBL = { salida:'Salida', llegada:'Llegada' };
+function defaultPriori(t){ return t.tipo === 'salida' ? '0' : '1'; }
+function buildTasks(){
+  const salidas = (departureRows || []).map(r => ({...r, tipo:'salida', obs:'sucia'}));
+  const llegadas = (arrivalRows || []).map(r => ({...r, tipo:'llegada', obs:'repaso'}));
+  const habsSalida = new Set(salidas.map(s => s.hab));
+  tasks = [];
+  for (const l of llegadas){
+    if (habsSalida.has(l.hab)){ l.obs = 'sucia'; habsSalida.delete(l.hab); }
+    tasks.push(l);
+  }
+  for (const s of salidas){
+    if (habsSalida.has(s.hab)) tasks.push(s);
+  }
+  tasks.forEach(t => { t.hora=''; t.cama=''; t.priori = defaultPriori(t); t.horaSalida=''; t.coment=''; });
+  /* informes nuevos = día nuevo: la base vuelve a hoy, así el informe sale para mañana */
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  setBaseDate(hoy);
+  archivedISO = null;
+  renderTareas();
+  saveState();
+  renderHist();
+}
+function sortTasks(){
+  const list = [...tasks];
+  const byHab = (a,b) => a.hab.localeCompare(b.hab, undefined, {numeric:true});
+  if (sortMode === 'hab') list.sort(byHab);
+  else if (sortMode === 'prio') list.sort((a,b) => {
+    /* prioridad más alta primero: 1 antes que 0 */
+    const pa = parseFloat(a.priori), pb = parseFloat(b.priori);
+    const va = isNaN(pa) ? -99 : pa, vb = isNaN(pb) ? -99 : pb;
+    return vb - va || byHab(a,b);
+  });
+  else list.sort((a,b) => a.huesped.localeCompare(b.huesped, 'es', {sensitivity:'base'}));
+  return list;
+}
+function renderTareas(){
+  $('tareasHint').style.display = 'none';
+  $('tareasBody').style.display = 'block';
+  const tb = $('tbodyTareas'); tb.innerHTML = '';
+  const list = sortTasks();
+  $('emptyTareas').style.display = list.length ? 'none' : 'block';
+  const nL = list.filter(t=>t.tipo==='llegada').length;
+  const nS = list.filter(t=>t.obs==='sucia').length, nR = list.filter(t=>t.obs==='repaso').length;
+  $('countTareas').innerHTML = `<b>${list.length}</b> apartamentos · <b>${nS}</b> sucia · <b>${nR}</b> repaso`
+    + (nL ? ` · <b style="color:var(--arr)">${nL}</b> con llegada (prioridad 1)` : '');
+  for (const t of list){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><button class="del" title="Quitar fila" aria-label="Quitar fila">✕</button></td>
+      <td><span class="hab">${esc(t.hab)}</span></td>
+      <td><span class="tipo ${t.tipo}">${TIPO_LBL[t.tipo] || t.tipo}</span></td>
+      <td>${esc(t.huesped)}</td>
+      <td>${fmt(t.llegada)}</td>
+      <td>${fmt(t.salida)}</td>
+      <td><input type="text" data-f="hora" value="${esc(t.hora)}" placeholder="—" size="6"></td>
+      <td class="pax">${esc(t.ac)}·${esc(t.ju)}·${esc(t.ni)}·${esc(t.ini)}</td>
+      <td><input type="text" data-f="cama" value="${esc(t.cama)}" placeholder="—" size="6"></td>
+      <td><input type="text" data-f="priori" class="prio-in${String(t.priori).trim()==='1'?' p1':''}" value="${esc(t.priori)}" size="3"></td>
+      <td><button class="obs-tag ${t.obs}">${t.obs}</button></td>
+      <td><input type="text" data-f="horaSalida" value="${esc(t.horaSalida)}" placeholder="—" size="6"></td>
+      <td><input type="text" data-f="coment" value="${esc(t.coment)}" placeholder="—"></td>`;
+    tr.querySelector('.obs-tag').addEventListener('click', () => {
+      t.obs = t.obs === 'sucia' ? 'repaso' : 'sucia'; renderTareas(); saveState();
+    });
+    tr.querySelector('.del').addEventListener('click', () => {
+      tasks = tasks.filter(x => x !== t); renderTareas(); saveState();
+    });
+    tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => {
+      t[inp.dataset.f] = inp.value;
+      if (inp.dataset.f === 'priori') inp.classList.toggle('p1', inp.value.trim() === '1');
+      saveState();
+    }));
+    tb.appendChild(tr);
+  }
+}
+const TAREAS_HDR = ['Llegada/Salida','Llegada','Salida','Huesped','HAB','HORA LLEG','AC','JU','NI','INI','Su','CAMA','Priori','Observa','Hora Salida','Comentarios recep'];
+const TAREAS_COLS = [{wch:16},{wch:11},{wch:11},{wch:28},{wch:6},{wch:10},{wch:4},{wch:4},{wch:4},{wch:4},{wch:4},{wch:8},{wch:6},{wch:9},{wch:11},{wch:26}];
+function taskRow(t){
+  return [TIPO_LBL[t.tipo] || t.tipo, fmt(t.llegada), fmt(t.salida), t.huesped, t.hab, t.hora,
+    String(t.ac), String(t.ju), String(t.ni), String(t.ini), '', t.cama, t.priori, t.obs, t.horaSalida, t.coment];
+}
+function sortSnap(list){
+  return [...list].sort((a,b) => {
+    const pa = parseFloat(a.priori) || 99, pb = parseFloat(b.priori) || 99;
+    return pa - pb || a.hab.localeCompare(b.hab, undefined, {numeric:true});
+  });
+}
+function tareasSheet(list, dateObj, notesText){
+  const aoa = [
+    ['TAREAS PISOS — ' + dateObj.toLocaleDateString('es-ES', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'})],
+    [],
+    TAREAS_HDR,
+  ];
+  for (const t of list) aoa.push(taskRow(t));
+  const notes = (notesText || '').split('\n').map(s => s.trim()).filter(Boolean);
+  if (notes.length){ aoa.push([]); aoa.push(['NOTAS:']); for (const n of notes) aoa.push([n]); }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = TAREAS_COLS;
+  return ws;
+}
+function exportTareasXlsx(){
+  const td = tareasDate();
+  const ws = tareasSheet(sortTasks(), td, $('notesTareas').value);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Tareas Pisos');
+  XLSX.writeFile(wb, `Tareas_pisos_${pad(td.getDate())}_${pad(td.getMonth()+1)}_${td.getFullYear()}.xlsx`);
+}
+function exportHistXlsx(){
+  const hist = histList();
+  if (!hist.length){ showError('Todavía no hay días archivados en el historial.'); return; }
+  const wb = XLSX.utils.book_new();
+  /* hoja resumen: todos los días juntos, con columna Fecha */
+  const res = [['HISTORIAL DE TAREAS PISOS — ' + hist.length + ' días archivados'], [], ['Fecha', ...TAREAS_HDR]];
+  for (const h of hist){
+    for (const t of sortSnap(h.tasks)) res.push([h.iso.split('-').reverse().join('/'), ...taskRow(t)]);
+  }
+  const wsR = XLSX.utils.aoa_to_sheet(res);
+  wsR['!cols'] = [{wch:11}, ...TAREAS_COLS];
+  XLSX.utils.book_append_sheet(wb, wsR, 'Resumen');
+  /* una hoja por día */
+  for (const h of hist){
+    const [y, m, d] = h.iso.split('-').map(Number);
+    XLSX.utils.book_append_sheet(wb, tareasSheet(sortSnap(h.tasks), new Date(y, m-1, d), h.notes), h.iso);
+  }
+  XLSX.writeFile(wb, `Historial_tareas_pisos_${hist[hist.length-1].iso}_a_${hist[0].iso}.xlsx`);
+}
+function exportDayXlsx(h){
+  const [y, m, d] = h.iso.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, tareasSheet(sortSnap(h.tasks), dt, h.notes), 'Tareas Pisos');
+  XLSX.writeFile(wb, `Tareas_pisos_${pad(d)}_${pad(m)}_${y}.xlsx`);
+}
+function renderHist(){
+  const hist = histList();
+  const cur = tareasISO;
+  $('countHist').innerHTML = hist.length
+    ? `<b>${hist.length}</b> días archivados · del ${hist[hist.length-1].iso.split('-').reverse().join('/')} al ${hist[0].iso.split('-').reverse().join('/')}`
+    : 'Sin días archivados todavía';
+  const box = $('histList'); box.innerHTML = '';
+  if (!hist.length){
+    box.innerHTML = '<div class="hint">Cuando cargues los informes y armes las tareas de un día, se archiva solo acá.</div>';
+    return;
+  }
+  for (const h of hist){
+    const [y, m, d] = h.iso.split('-').map(Number);
+    const dt = new Date(y, m-1, d);
+    const sv = new Date(h.savedAt || Date.now());
+    const nA = h.tasks.filter(t => t.tipo === 'ambos').length;
+    const el = document.createElement('div');
+    el.className = 'hcard' + (h.iso === cur ? ' cur' : '');
+    el.innerHTML = `
+      <span class="hdate">${pad(d)}/${pad(m)}/${y}</span>
+      <span class="hinfo">${dt.toLocaleDateString('es-ES',{weekday:'long'})} · <b>${h.tasks.length}</b> apartamentos${nA ? ` · <b>${nA}</b> sale y entra` : ''}
+        <br><span style="font-size:11.5px">guardado ${fmtShort(sv)} ${pad(sv.getHours())}:${pad(sv.getMinutes())}</span></span>
+      ${h.iso === cur ? '<span class="tag">día actual</span>' : ''}
+      <span class="hact">
+        <button class="pri bx">Excel</button>
+        <button class="bo">Abrir</button>
+        <button class="dan bd" title="Borrar del historial">✕</button>
+      </span>`;
+    el.querySelector('.bx').addEventListener('click', () => exportDayXlsx(h));
+    el.querySelector('.bo').addEventListener('click', () => {
+      if (tasks.length && h.iso !== cur && !confirm('Se van a reemplazar las tareas que tenés en pantalla por las del ' + pad(d) + '/' + pad(m) + '.\n\n¿Seguimos?')) return;
+      tasks = h.tasks;
+      setBaseDate(addDays(fromISO(h.iso), -1));
+      archivedISO = h.iso;
+      $('notesTareas').value = h.notes || '';
+      renderTareas(); saveState(); renderHist(); showTab('tareas');
+    });
+    el.querySelector('.bd').addEventListener('click', () => {
+      if (!confirm('¿Borrar el ' + pad(d) + '/' + pad(m) + '/' + y + ' del historial? No se puede deshacer.')) return;
+      try{ localStorage.removeItem(HKEY + h.iso); }catch(e){}
+      renderHist();
+    });
+    box.appendChild(el);
+  }
+}
+
+/* ================= CONTROL LIMPIEZA (reglas Brabo) =================
+   Limpiezas de cliente: solo en estancias de 7 NOCHES O MÁS.
+     La primera cae hacia la mitad (check-in + 4) y luego una por semana
+     (+11, +18, +25 …). Siempre antes de la salida, así una reserva de 7
+     noches también lleva su limpieza "entre medias".
+   Cambios de toalla: CADA 3 DÍAS de estancia (check-in +3, +6, +9 …),
+     siempre antes de la salida. Si un cambio de toalla cae el mismo día
+     que una limpieza de cliente se omite, porque la limpieza ya deja
+     toallas limpias. */
+function schedule(g){
+  const n = g.noches, ci = g.checkin;
+  const clients = [];
+  if (n >= 7){
+    for (let off = 4; off < n; off += 7) clients.push(addDays(ci, off));
+  }
+  const towels = [];
+  for (let off = 3; off < n; off += 3){
+    const d = addDays(ci, off);
+    if (!clients.some(c => same(c, d))) towels.push(d);
+  }
+  return { towels, clients };
+}
+const towelDates = s => s.towels;
+const clientDates = s => s.clients;
+
+/* cifras de un día para la previsión: toallas, limpiezas de cliente, llegadas y salidas —
+   igual que en ART Limpieza. En el día del parte, si Arrival/Departure están cargados,
+   se usan sus cifras oficiales en vez de contar sobre el In House. */
+function forecastCounts(day, ref){
+  let t = 0, c = 0, a = 0, d = 0;
+  for (const g of guests){
+    const s = schedule(g);
+    t += towelDates(s).filter(x => same(x, day)).length;
+    c += clientDates(s).filter(x => same(x, day)).length;
+    if (same(g.checkin, day))  a++;
+    if (same(g.checkout, day)) d++;
+  }
+  const dISO = toISO(day);
+  const nExtraC = (lsGet('brabo-extra-' + dISO, []) || []).length;
+  const nExtraT = (lsGet('brabo-extra-tw-' + dISO, []) || []).length;
+  c += nExtraC;
+  t += nExtraT;
+  if (ref && same(day, ref)){
+    if (arrivalRows)   a = arrivalRows.length;
+    if (departureRows) d = departureRows.length;
+  }
+  return { t, c, a, d, nExtra: nExtraC + nExtraT };
+}
+
+function renderCal(){
+  if (!guests.length) return;
+  $('calHint').style.display = 'none';
+  $('calBody').style.display = 'block';
+  const ref = tareasDate();
+
+  $('prevBox').style.display = 'block';
+  const pg = $('prevGrid'); pg.innerHTML = '';
+  for (let k=0; k<=7; k++){
+    const day = addDays(ref, k);
+    const { t, c, a, d, nExtra } = forecastCounts(day, ref);
+    const metric = (cls, lbl, val, extra) =>
+      `<div class="m ${val ? cls : 'z'}"><span class="ml">${lbl}</span>${val}${extra ? '<span class="xstar">+</span>' : ''}</div>`;
+    const el = document.createElement('div');
+    el.className = 'pd' + (nExtra ? ' has-extra' : '');
+    el.innerHTML = `<div class="pdate">${day.toLocaleDateString('es-ES',{weekday:'short'})} ${fmtShort(day)}</div>
+      <div class="metrics">
+        ${metric('t', 'T', t, nExtra)}
+        ${metric('c', 'C', c, false)}
+        ${metric('s', 'S', d, false)}
+      </div>`;
+    pg.appendChild(el);
+  }
+
+  const tb = $('tbodyCal'); tb.innerHTML = '';
+  // lista de fechas (toallas o limpiezas) como chips, resaltando la que cae en el día del parte
+  const dateList = (dates, cls) => dates.length
+    ? `<td><div class="dchips">${dates.map(d =>
+        `<span class="dt ${cls}${same(d,ref)?' today-mark':''}">${fmt(d)}</span>`).join('')}</div></td>`
+    : `<td><span class="no">—</span></td>`;
+  let long = 0;
+  for (const g of guests){
+    const s = schedule(g);
+    const towels = towelDates(s), clients = clientDates(s);
+    const conLimpieza = g.noches >= 7; if (conLimpieza) long++;
+    const hasToday = [...towels, ...clients].some(d => same(d, ref));
+    const tr = document.createElement('tr');
+    if (hasToday) tr.className = 'hl';
+    tr.innerHTML = `<td><span class="hab">${g.hab}</span></td><td>${g.huesped}</td>
+      <td class="dt">${fmt(g.checkin)}</td><td class="dt">${fmt(g.checkout)}</td>
+      <td class="dt">${g.noches}</td>
+      ${dateList(towels,'t')}${dateList(clients,'c')}
+      <td><input type="text" class="cmt" value="${(g.coment||'').replace(/"/g,'&quot;')}" placeholder="—" style="min-width:150px"></td>`;
+    tr.querySelector('.cmt').addEventListener('input', e => { g.coment = e.target.value; saveState(); });
+    tb.appendChild(tr);
+  }
+  $('countCal').innerHTML = `<b>${guests.length}</b> estancias in house · <b>${long}</b> con limpieza de cliente (7+ noches)`;
+}
+function exportCalXlsx(){
+  const header = ['Habitacion','Nombre','Check-in','Check-out','Nº de Noches',
+    'Limpieza de cliente (7+ noches)','Toallas (cada 3 días)','Limpiezas de cliente','Comentarios'];
+  const list = ds => ds.length ? ds.map(fmt).join(', ') : '—';
+  const aoa = [header];
+  for (const g of guests){
+    const s = schedule(g);
+    aoa.push([g.hab, g.huesped, fmt(g.checkin), fmt(g.checkout), g.noches, g.noches>=7?'SI':'NO',
+      list(towelDates(s)), list(clientDates(s)), g.coment || '']);
+  }
+  const notes = $('notesCal').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (notes.length){ aoa.push([]); aoa.push(['NOTAS:']); for (const n of notes) aoa.push([n]); }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:9},{wch:28},{wch:11},{wch:11},{wch:10},{wch:16},{wch:34},{wch:34},{wch:26}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Control Limpieza');
+  const d = tareasDate();
+  XLSX.writeFile(wb, `Control_Limpieza_${pad(d.getDate())}_${pad(d.getMonth()+1)}_${d.getFullYear()}.xlsx`);
+}
+
+/* ================= HOY · MENSAJES ================= */
+function eventsToday(){
+  const ref = tareasDate();
+  const towels = [], clients = [];
+  for (const g of guests){
+    const s = schedule(g);
+    if (towelDates(s).some(d => same(d, ref))) towels.push(g);
+    if (clientDates(s).some(d => same(d, ref))) clients.push(g);
+  }
+  const byHab = (a,b) => a.hab.localeCompare(b.hab, undefined, {numeric:true});
+  towels.sort(byHab); clients.sort(byHab);
+  // toallas: automáticas + extra agregadas a mano (se pueden borrar)
+  const tw = towels.map(g => ({ hab: g.hab, huesped: g.huesped }));
+  extraTowels().forEach((e, idx) => {
+    tw.push({ hab: e.hab, huesped: e.huesped, extra: true, idx });
+  });
+  tw.sort(byHab);
+  // turnos de limpieza: priorizando siempre el más temprano
+  const cl = clients.map((g, i) => ({ g, hora: slotFor(g.hab, SLOTS[Math.min(i, SLOTS.length-1)]) }));
+  // limpiezas extra agregadas a mano: llevan su propia hora y se pueden borrar
+  extraCleans().forEach((e, idx) => {
+    cl.push({ g: { hab: e.hab, huesped: e.huesped }, hora: slotFor('x' + e.hab, e.hora), extra: true, idx });
+  });
+  cl.sort((a, b) => a.g.hab.localeCompare(b.g.hab, undefined, {numeric:true}));
+  return { towels: tw, clients: cl };
+}
+function renderHoy(){
+  const hasExtras = extraCleans().length > 0 || extraTowels().length > 0;
+  if (!guests.length && !hasExtras){ $('hoyBody').style.display = 'none'; $('hoyHint').style.display = 'block'; return; }
+  $('hoyHint').style.display = 'none';
+  $('hoyBody').style.display = 'block';
+  const { towels, clients } = eventsToday();
+
+  const lt = $('listTowels'); lt.innerHTML = '';
+  if (!towels.length) lt.innerHTML = '<div class="none">Sin cambios de toalla para el día del parte.</div>';
+  for (const g of towels){
+    const tid = g.extra ? 'x' + g.hab : g.hab;   // el estado de una extra se guarda con clave propia
+    const done = isConfirmed(tid, 't');
+    const row = document.createElement('div');
+    row.className = 'ev' + (done ? ' done' : '') + (g.extra ? ' extra' : '');
+    row.innerHTML = `<span class="hab">${esc(g.hab)}</span>
+      ${g.extra ? '<span class="xtag">Extra</span>' : ''}
+      <span class="who">${esc(g.huesped) || '<span class="who-empty">—</span>'}</span>
+      <span class="hora">${TOWEL_WINDOW}</span>
+      <span class="acts">
+        <button class="conf${done?' on':''}">${done?'✓ Confirmado':'Pendiente'}</button>
+        <button class="msg-btn">Copiar</button>
+        ${g.extra ? '<button class="del-extra" title="Quitar este cambio de toalla extra">✕</button>' : ''}
+      </span>`;
+    const msg = () => fillTpl($('tplTowel').value, g.hab, TOWEL_WINDOW);
+    row.querySelector('.conf').addEventListener('click', () => { toggleConf(tid, 't', 'ok'); renderHoy(); });
+    row.querySelector('.msg-btn').addEventListener('click', e => copyText(msg(), e.target));
+    if (g.extra) row.querySelector('.del-extra').addEventListener('click', () => { removeExtraTowel(g.idx); toast('Se sacó la toalla extra del apto ' + g.hab, 'rm'); renderHoy(); refreshPrev(); saveState(); });
+    lt.appendChild(row);
+  }
+  // botón para agregar un cambio de toalla extra (reprogramación)
+  const addTw = document.createElement('button');
+  addTw.className = 'add-extra';
+  addTw.textContent = '+ Agregar cambio de toalla para este día';
+  addTw.addEventListener('click', openExtraTowelForm);
+  lt.appendChild(addTw);
+
+  const lc = $('listClients'); lc.innerHTML = '';
+  if (!clients.length) lc.innerHTML = '<div class="none">Sin limpiezas de cliente para el día del parte.</div>';
+  for (const c of clients){
+    const g = c.g, hora = c.hora;
+    const cid = c.extra ? 'x' + g.hab : g.hab;   // el estado de una extra se guarda con clave propia
+    const st = confState(cid, 'c');
+    const row = document.createElement('div');
+    row.className = 'ev' + (st === 'ok' ? ' done' : st === 'no' ? ' nope' : '') + (c.extra ? ' extra' : '');
+    const opts = SLOTS.map(s => `<option${s===hora?' selected':''}>${s}</option>`).join('');
+    row.innerHTML = `<span class="hab">${esc(g.hab)}</span>
+      ${c.extra ? '<span class="xtag">Extra</span>' : ''}
+      <span class="who">${esc(g.huesped) || '<span class="who-empty">—</span>'}</span>
+      <select aria-label="Hora de limpieza">${opts}</select>
+      <span class="acts">
+        <button class="conf${st==='ok'?' on':''}">✓ Confirmado</button>
+        <button class="nope-btn${st==='no'?' on':''}">✗ No quiere</button>
+        <button class="msg-btn">Copiar</button>
+        ${c.extra ? '<button class="del-extra" title="Quitar esta limpieza extra">✕</button>' : ''}
+      </span>`;
+    const msg = () => fillTpl($('tplClean').value, g.hab, slotFor(cid, hora));
+    row.querySelector('select').addEventListener('change', e => { setSlot(cid, e.target.value); renderHoy(); });
+    row.querySelector('.conf').addEventListener('click', () => { toggleConf(cid, 'c', 'ok'); renderHoy(); });
+    row.querySelector('.nope-btn').addEventListener('click', () => { toggleConf(cid, 'c', 'no'); renderHoy(); });
+    row.querySelector('.msg-btn').addEventListener('click', e => copyText(msg(), e.target));
+    if (c.extra) row.querySelector('.del-extra').addEventListener('click', () => { removeExtraClean(c.idx); toast('Se sacó la limpieza extra del apto ' + c.g.hab, 'rm'); renderHoy(); refreshPrev(); saveState(); });
+    lc.appendChild(row);
+  }
+  // botón para agregar una limpieza extra (reprogramación)
+  const add = document.createElement('button');
+  add.className = 'add-extra';
+  add.textContent = '+ Agregar limpieza para este día';
+  add.addEventListener('click', openExtraForm);
+  lc.appendChild(add);
+}
+/* pequeño formulario en línea para agregar una limpieza extra */
+function refreshPrev(){ if (guests.length) renderCal(); }
+function openExtraForm(){
+  const lc = $('listClients');
+  if (lc.querySelector('.extra-form')) return;   // ya está abierto
+  const f = document.createElement('div');
+  f.className = 'extra-form';
+  const opts = SLOTS.map(s => `<option>${s}</option>`).join('');
+  f.innerHTML = `
+    <input type="text" class="xf-hab" placeholder="Apto" inputmode="numeric">
+    <input type="text" class="xf-name" placeholder="Nombre (opcional)">
+    <select class="xf-hora">${opts}</select>
+    <button class="xf-ok">Agregar</button>
+    <button class="xf-cancel">Cancelar</button>`;
+  const submit = () => {
+    const hab = f.querySelector('.xf-hab').value.trim();
+    if (!hab){ f.querySelector('.xf-hab').focus(); return; }
+    addExtraClean(hab, f.querySelector('.xf-name').value, f.querySelector('.xf-hora').value);
+    toast('Se agregó una limpieza extra en el apto ' + hab, 'add');
+    renderHoy(); refreshPrev(); saveState();
+  };
+  f.querySelector('.xf-ok').addEventListener('click', submit);
+  f.querySelector('.xf-hab').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  f.querySelector('.xf-name').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  f.querySelector('.xf-cancel').addEventListener('click', () => renderHoy());
+  lc.appendChild(f);
+  f.querySelector('.xf-hab').focus();
+}
+/* formulario en línea para agregar un cambio de toalla extra (franja fija 11:00-16:00) */
+function openExtraTowelForm(){
+  const lt = $('listTowels');
+  if (lt.querySelector('.extra-form')) return;   // ya está abierto
+  const f = document.createElement('div');
+  f.className = 'extra-form';
+  f.innerHTML = `
+    <input type="text" class="xf-hab" placeholder="Apto" inputmode="numeric">
+    <input type="text" class="xf-name" placeholder="Nombre (opcional)">
+    <button class="xf-ok">Agregar</button>
+    <button class="xf-cancel">Cancelar</button>`;
+  const submit = () => {
+    const hab = f.querySelector('.xf-hab').value.trim();
+    if (!hab){ f.querySelector('.xf-hab').focus(); return; }
+    addExtraTowel(hab, f.querySelector('.xf-name').value);
+    toast('Se agregó una toalla extra en el apto ' + hab, 'add');
+    renderHoy(); refreshPrev(); saveState();
+  };
+  f.querySelector('.xf-ok').addEventListener('click', submit);
+  f.querySelector('.xf-hab').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  f.querySelector('.xf-name').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  f.querySelector('.xf-cancel').addEventListener('click', () => renderHoy());
+  lt.appendChild(f);
+  f.querySelector('.xf-hab').focus();
+}
+$('copyAllTw').addEventListener('click', e => {
+  const { towels } = eventsToday();
+  if (!towels.length) return;
+  const msgs = towels.map(g => fillTpl($('tplTowel').value, g.hab, TOWEL_WINDOW));
+  copyText(msgs.join('\n\n———\n\n'), e.target);
+});
+$('copyAllCl').addEventListener('click', e => {
+  const { clients } = eventsToday();
+  if (!clients.length) return;
+  const msgs = clients.map(c => fillTpl($('tplClean').value, c.g.hab, c.hora));
+  copyText(msgs.join('\n\n———\n\n'), e.target);
+});
+
+/* ================= IMAGEN DEL PARTE ================= */
+function drawParte(){
+  const td = tareasDate();
+  const ref = td;   /* todo el parte corresponde al mismo día: el del informe */
+  const list = tasks.length ? sortTasks() : [];
+  const { towels, clients } = (guests.length || extraCleans().length) ? eventsToday() : { towels: [], clients: [] };
+  const notes = $('notesTareas').value.split('\n').map(s => s.trim()).filter(Boolean);
+
+  const W = 1240, ROW = 48, SEC = 66, PADX = 46, LINE = 19;
+  /* columnas fijas: todo alineado, sin huecos muertos */
+  const C = {
+    prio: PADX, hab: PADX + 42, tipo: PADX + 112, obs: PADX + 216,
+    name: PADX + 306, sale: PADX + 566, entra: PADX + 654, pax: PADX + 742, com: PADX + 836
+  };
+  const W_NAME = C.sale - C.name - 14;
+  const W_COM = W - PADX - C.com;
+
+  /* medimos los comentarios antes de saber el alto: hace falta un lienzo aparte */
+  const mx = document.createElement('canvas').getContext('2d');
+  const Ff = (w, s) => `${w} ${s}px Outfit, sans-serif`;
+  const wrap = (ctx, txt, maxW, maxLines) => {
+    txt = String(txt ?? '').trim();
+    if (!txt) return [];
+    const words = txt.split(/\s+/);
+    const lines = []; let cur = '';
+    for (const wd of words){
+      const test = cur ? cur + ' ' + wd : wd;
+      if (ctx.measureText(test).width <= maxW){ cur = test; continue; }
+      if (cur) lines.push(cur);
+      cur = wd;
+      if (lines.length === maxLines){ cur = ''; break; }
+    }
+    if (cur && lines.length < maxLines) lines.push(cur);
+    /* si quedó texto fuera, marcamos el corte con … */
+    const joined = lines.join(' ');
+    if (joined.length < txt.length && lines.length){
+      let last = lines[lines.length - 1];
+      while (last.length && ctx.measureText(last + '…').width > maxW) last = last.slice(0, -1);
+      lines[lines.length - 1] = last + '…';
+    }
+    return lines;
+  };
+  mx.font = Ff(500, 13.5);
+  const comLines = new Map();
+  for (const t of list) comLines.set(t, wrap(mx, t.coment, W_COM, 2));
+  const rowH = t => Math.max(ROW, 26 + (comLines.get(t) || []).length * LINE + 6);
+
+  let H = 138 + 44;
+  if (list.length)    H += SEC + 26 + list.reduce((s,t) => s + rowH(t), 0) + 20;
+  if (towels.length || clients.length) H += SEC + Math.max(towels.length, clients.length, 1) * ROW + 20;
+  if (!list.length && !towels.length && !clients.length) H += 90;
+  if (notes.length)   H += SEC + notes.length * 34 + 12;
+  if (guests.length)  H += SEC + (112 + 12) + 30;
+
+  /* el móvil revienta si el lienzo es muy grande: bajamos la nitidez antes que romper */
+  let S = 2;
+  while (S > 1 && (W * S) * (H * S) > 10000000) S -= 0.25;
+
+  const cv = document.createElement('canvas');
+  cv.width = W * S; cv.height = H * S;
+  const x = cv.getContext('2d');
+  x.scale(S, S);
+  const rr = (px, py, pw, ph, r) => {
+    x.beginPath();
+    if (x.roundRect) x.roundRect(px, py, pw, ph, r);
+    else x.rect(px, py, pw, ph);
+  };
+  const F = (w, s) => `${w} ${s}px Outfit, sans-serif`;
+  const M = s => `600 ${s}px "IBM Plex Mono", monospace`;
+  const ellip = (txt, maxW) => {
+    txt = String(txt ?? '');
+    if (x.measureText(txt).width <= maxW) return txt;
+    while (txt.length && x.measureText(txt + '…').width > maxW) txt = txt.slice(0, -1);
+    return txt + '…';
+  };
+
+  x.fillStyle = '#FAF8F3'; x.fillRect(0, 0, W, H);
+  x.fillStyle = '#17313B'; x.fillRect(0, 0, W, 104);
+  x.textBaseline = 'middle';
+  x.fillStyle = '#fff'; x.font = F(800, 27);
+  x.fillText('PARTE DE LIMPIEZA · BRABO APARTMENTS', PADX, 42);
+  x.fillStyle = '#93A7B0'; x.font = M(13);
+  x.fillText(`Tareas · toallas · limpiezas del ${fmt(td)}`, PADX, 74);
+  x.font = M(17); x.fillStyle = '#0FA3A3'; x.textAlign = 'right';
+  x.fillText(td.toLocaleDateString('es-ES', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'}), W - PADX, 52);
+  x.textAlign = 'left';
+
+  let y = 138;
+  const sectionTitle = (txt, color) => {
+    x.fillStyle = color; x.font = F(800, 17);
+    x.fillText(txt.toUpperCase(), PADX, y + 10);
+    x.strokeStyle = '#E4DFD4'; x.lineWidth = 1.5;
+    x.beginPath(); x.moveTo(PADX, y + 31); x.lineTo(W - PADX, y + 31); x.stroke();
+    y += SEC;
+  };
+  const habBox = (hab, px, py) => {
+    x.font = M(15);
+    const w = 62;
+    x.fillStyle = '#fff'; x.strokeStyle = '#E4DFD4'; x.lineWidth = 1.5;
+    rr(px, py - 16, w, 32, 8); x.fill(); x.stroke();
+    x.fillStyle = '#17313B'; x.textAlign = 'center';
+    x.fillText(ellip(hab, w - 10), px + w/2, py + 1);
+    x.textAlign = 'left';
+    return w;
+  };
+  /* badge de ancho fijo: así todas las columnas quedan alineadas */
+  const badgeFix = (txt, color, bg, border, px, py, w) => {
+    x.font = F(800, 12.5);
+    x.fillStyle = bg; x.strokeStyle = border || bg; x.lineWidth = 1.5;
+    rr(px, py - 15, w, 30, 8); x.fill(); if (border) x.stroke();
+    x.fillStyle = color; x.textAlign = 'center';
+    x.fillText(txt, px + w/2, py + 1);
+    x.textAlign = 'left';
+    return w;
+  };
+  const pillFix = (txt, color, bg, px, py, w) => {
+    x.font = F(700, 12.5);
+    x.fillStyle = bg; rr(px, py - 14, w, 28, 999); x.fill();
+    x.fillStyle = color; x.textAlign = 'center';
+    x.fillText(txt, px + w/2, py + 1);
+    x.textAlign = 'left';
+    return w;
+  };
+  const prioCircle = (val, px, py) => {
+    const v = String(val ?? '').trim();
+    const top = v === '1';
+    x.fillStyle = top ? '#2E9E5B' : '#FFFFFF';
+    x.strokeStyle = top ? '#2E9E5B' : '#E4DFD4'; x.lineWidth = 1.5;
+    rr(px, py - 15, 30, 30, 999); x.fill(); x.stroke();
+    x.fillStyle = top ? '#fff' : '#8A93A6'; x.font = M(14); x.textAlign = 'center';
+    x.fillText(v || '–', px + 15, py + 1);
+    x.textAlign = 'left';
+    return 30;
+  };
+  /* hueco a rellenar a mano: una rayita en vez de un vacío */
+  const blank = (px, py, w) => {
+    x.strokeStyle = '#DDD7C9'; x.lineWidth = 1.5;
+    x.beginPath(); x.moveTo(px, py + 7); x.lineTo(px + w, py + 7); x.stroke();
+  };
+  const estadoAt = (st, px, py, w) => {
+    if (st === 'ok') return pillFix('✓ CONFIRMADO', '#fff', '#2E9E5B', px, py, w);
+    if (st === 'no') return pillFix('✗ NO QUIERE', '#fff', '#D0483C', px, py, w);
+    return pillFix('PENDIENTE', '#8A93A6', '#EFEBE2', px, py, w);
+  };
+  const TIPO_ST = {
+    salida:  { txt:'SALIDA',  color:'#4C5763', bg:'#EDEFF2', border:'#DBDFE5' },
+    llegada: { txt:'LLEGADA', color:'#fff',    bg:'#2E9E5B', border:null },
+  };
+
+  if (list.length){
+    const nL = list.filter(t => t.tipo === 'llegada').length;
+    sectionTitle(`Apartamentos a limpiar (${list.length})` + (nL ? ` · ${nL} con llegada` : ''), '#17313B');
+    /* encabezados de columna */
+    x.font = F(700, 10); x.fillStyle = '#A6B0B6';
+    for (const [txt, px] of [['PRIO', C.prio], ['HAB', C.hab], ['TIPO', C.tipo], ['ESTADO', C.obs],
+                             ['HUÉSPED', C.name], ['SALE', C.sale], ['ENTRA', C.entra], ['PAX', C.pax], ['COMENTARIOS', C.com]]){
+      x.fillText(txt, px, y);
+    }
+    y += 26;
+    for (const t of list){
+      const rh = rowH(t);
+      const cy = y + 24;
+      prioCircle(t.priori, C.prio, cy);
+      habBox(t.hab, C.hab, cy);
+      const st = TIPO_ST[t.tipo] || TIPO_ST.llegada;
+      badgeFix(st.txt, st.color, st.bg, st.border, C.tipo, cy, 92);
+      pillFix(t.obs.toUpperCase(), t.obs === 'sucia' ? '#D96459' : '#4E7FDB',
+              t.obs === 'sucia' ? '#FBEBE9' : '#EAF0FC', C.obs, cy, 78);
+      x.fillStyle = '#17313B'; x.font = F(600, 15);
+      x.fillText(ellip(t.huesped, W_NAME), C.name, cy + 1);
+      /* SALE · ENTRA: si están vacíos queda la rayita para escribir a mano */
+      x.font = M(13.5);
+      for (const [val, px] of [[t.horaSalida, C.sale], [t.hora, C.entra]]){
+        const v = String(val ?? '').trim();
+        if (v){ x.fillStyle = '#17313B'; x.fillText(ellip(v, 76), px, cy + 1); }
+        else blank(px, cy, 68);
+      }
+      x.fillStyle = '#5C707A'; x.font = M(13);
+      x.fillText(`${t.ac}·${t.ju}·${t.ni}·${t.ini}`, C.pax, cy + 1);
+      const lines = comLines.get(t) || [];
+      if (lines.length){
+        x.fillStyle = '#B5730F'; x.font = F(500, 13.5);
+        const startY = cy + 1 - (lines.length - 1) * LINE / 2;
+        lines.forEach((ln, i) => x.fillText(ln, C.com, startY + i * LINE));
+      } else {
+        blank(C.com, cy, W_COM - 6);
+      }
+      x.strokeStyle = '#F0ECE3'; x.lineWidth = 1;
+      x.beginPath(); x.moveTo(PADX, y + rh - 1); x.lineTo(W - PADX, y + rh - 1); x.stroke();
+      y += rh;
+    }
+    y += 20;
+  }
+
+  if (towels.length || clients.length){
+    const GAP = 30;
+    const colW = (W - PADX*2 - GAP) / 2;
+    const c1 = PADX, c2 = PADX + colW + GAP;
+    /* dos títulos a la misma altura, uno por columna */
+    x.font = F(800, 16);
+    x.fillStyle = '#0FA3A3';
+    x.fillText(`CAMBIO DE TOALLAS (${towels.length}) · 11:00-16:00`, c1, y + 10);
+    x.fillStyle = '#C97F17';
+    x.fillText(`LIMPIEZA DE CLIENTE (${clients.length})`, c2, y + 10);
+    x.strokeStyle = '#E4DFD4'; x.lineWidth = 1.5;
+    x.beginPath();
+    x.moveTo(c1, y + 31); x.lineTo(c1 + colW, y + 31);
+    x.moveTo(c2, y + 31); x.lineTo(c2 + colW, y + 31);
+    x.stroke();
+    y += SEC;
+    const EW = 132;  /* ancho del estado */
+    const n = Math.max(towels.length, clients.length, 1);
+    for (let i = 0; i < n; i++){
+      const cy = y + ROW/2 - 6;
+      const g = towels[i];
+      if (g){
+        const tcid = g.extra ? 'x' + g.hab : g.hab;
+        habBox(g.hab, c1, cy);
+        let tnx = c1 + 74;
+        if (g.extra){ tnx += badgeFix('EXTRA', '#C97F17', '#FBF0DD', '#F0DFBC', tnx, cy, 58) + 8; }
+        x.fillStyle = '#17313B'; x.font = F(600, 14.5);
+        x.fillText(ellip(g.huesped || '', c1 + colW - EW - 12 - tnx), tnx, cy + 1);
+        estadoAt(confState(tcid, 't'), c1 + colW - EW, cy, EW);
+      } else if (i === 0){
+        x.fillStyle = '#C9C2B4'; x.font = F(500, 13.5);
+        x.fillText('Sin cambios de toalla', c1, cy + 1);
+      }
+      const cl = clients[i];
+      if (cl){
+        const cid = cl.extra ? 'x' + cl.g.hab : cl.g.hab;
+        habBox(cl.g.hab, c2, cy);
+        badgeFix(cl.hora + ' h', '#B5730F', '#FBF0DD', '#F0DFBC', c2 + 70, cy, 64);
+        let nx = c2 + 146;
+        if (cl.extra){ nx += badgeFix('EXTRA', '#C97F17', '#FBF0DD', '#F0DFBC', nx, cy, 58) + 8; }
+        x.fillStyle = '#17313B'; x.font = F(600, 14.5);
+        x.fillText(ellip(cl.g.huesped || '', c2 + colW - EW - 12 - nx), nx, cy + 1);
+        estadoAt(confState(cid, 'c'), c2 + colW - EW, cy, EW);
+      } else if (i === 0){
+        x.fillStyle = '#C9C2B4'; x.font = F(500, 13.5);
+        x.fillText('Sin limpiezas de cliente', c2, cy + 1);
+      }
+      y += ROW;
+    }
+    y += 20;
+  }
+
+  if (!list.length && !towels.length && !clients.length){
+    x.fillStyle = '#8A93A6'; x.font = F(600, 16);
+    x.fillText('Sin datos cargados: subí los informes para generar el parte.', PADX, y + 20);
+    y += 90;
+  }
+
+  if (notes.length){
+    sectionTitle('Notas', '#17313B');
+    x.fillStyle = '#17313B'; x.font = F(400, 15);
+    for (const n of notes){ x.fillText('• ' + ellip(n, W - PADX*2 - 20), PADX, y + 10); y += 34; }
+    y += 12;
+  }
+
+  /* ---- previsión de la semana, al final ---- */
+  if (guests.length){
+    sectionTitle('Previsión próximos 7 días', '#17313B');
+    const N = 8, GAP = 10, CW = (W - PADX*2 - GAP*(N-1)) / N, BOXH = 112;
+    /* dibuja una cifra con su letra encima, centrada en (qx, qy) */
+    const quad = (qx, qy, letter, val, color, extra) => {
+      x.textAlign = 'center';
+      x.font = F(800, 9); x.fillStyle = '#A6B0B6';
+      x.fillText(letter, qx, qy - 9);
+      x.font = M(16); x.fillStyle = val ? color : '#D8D2C6';
+      x.fillText(String(val) + (extra ? '+' : ''), qx, qy + 8);
+      x.textAlign = 'left';
+    };
+    for (let k = 0; k < N; k++){
+      const day = addDays(ref, k);
+      const { t, c, a, d, nExtra } = forecastCounts(day, ref);
+      const cx = PADX + k * (CW + GAP);
+      const isToday = same(day, ref);
+      x.fillStyle = isToday ? '#FDFBF4' : '#FFFFFF';
+      x.strokeStyle = isToday ? '#17313B' : '#E4DFD4'; x.lineWidth = isToday ? 2 : 1.5;
+      rr(cx, y, CW, BOXH, 12); x.fill(); x.stroke();
+      x.textAlign = 'center';
+      x.fillStyle = '#5C707A'; x.font = F(700, 11.5);
+      x.fillText(day.toLocaleDateString('es-ES', {weekday:'short'}).replace('.', '').toUpperCase(), cx + CW/2, y + 17);
+      x.fillStyle = '#17313B'; x.font = M(12.5);
+      x.fillText(fmtShort(day), cx + CW/2, y + 34);
+      x.textAlign = 'left';
+      x.strokeStyle = '#EDE8DC'; x.lineWidth = 1;
+      x.beginPath(); x.moveTo(cx + 12, y + 46); x.lineTo(cx + CW - 12, y + 46); x.stroke();
+      const lX = cx + CW * 0.29, rX = cx + CW * 0.71, r1 = y + 68, r2 = y + 96;
+      quad(lX, r1, 'TOA', t, '#0FA3A3');
+      quad(rX, r1, 'CLI', c, '#C97F17', nExtra);
+      quad(lX, r2, 'LLEG', a, '#2E9E5B');
+      quad(rX, r2, 'SAL', d, '#D0483C');
+    }
+    y += BOXH + 12;
+    /* leyenda de la previsión */
+    let lx = PADX;
+    const legendItem = (color, label) => {
+      x.fillStyle = color; rr(lx, y + 4, 9, 9, 999); x.fill();
+      x.fillStyle = '#5C707A'; x.font = F(600, 12.5);
+      x.fillText(label, lx + 15, y + 9);
+      lx += 15 + x.measureText(label).width + 24;
+    };
+    legendItem('#0FA3A3', 'toallas');
+    legendItem('#C97F17', 'clientes');
+    legendItem('#2E9E5B', 'llegadas');
+    legendItem('#D0483C', 'salidas');
+    y += 30;
+  }
+
+  x.fillStyle = '#8A93A6'; x.font = M(12);
+  const now = new Date();
+  x.fillText(`Generado ${fmtShort(now)} ${pad(now.getHours())}:${pad(now.getMinutes())} · Brabo Limpieza`, PADX, H - 24);
+
+  return { cv, name: `Parte_limpieza_${pad(td.getDate())}_${pad(td.getMonth()+1)}_${td.getFullYear()}.png` };
+}
+
+/* La descarga por enlace falla dentro de la app instalada (y en varios móviles).
+   Por eso primero probamos el menú de compartir del teléfono, que es lo que abre WhatsApp. */
+function canvasBlob(cv){
+  return new Promise((res, rej) => {
+    try{ cv.toBlob(b => b ? res(b) : rej(new Error('el lienzo salió vacío')), 'image/png'); }
+    catch(e){ rej(e); }
+  });
+}
+function forceDownload(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 8000);
+}
+/* Copiar la imagen al portapapeles: es lo más rápido en la computadora,
+   pegás directo en WhatsApp Web con Ctrl+V y listo. */
+function flashBtn(btn, txt, ok){
+  if (!btn) return;
+  const orig = btn.dataset.orig || btn.textContent;
+  btn.dataset.orig = orig;
+  btn.textContent = txt;
+  btn.classList.toggle('copied', !!ok);
+  setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 2200);
+}
+function copyParteImage(btn){
+  hideError();
+  if (!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem)){
+    showError('Este navegador no deja copiar imágenes al portapapeles. Usá "Enviar" o "Descargar imagen" — o abrí la app en Chrome o Edge desde la computadora.');
+    return;
+  }
+  /* el ClipboardItem se arma acá mismo, dentro del clic, y por dentro lleva una promesa:
+     si esperamos al dibujo antes de crearlo, Safari lo rechaza por perder el gesto del usuario */
+  const blobP = (async () => {
+    try{ await document.fonts.ready; }catch(e){}
+    return await canvasBlob(drawParte().cv);
+  })();
+  navigator.clipboard.write([ new ClipboardItem({ 'image/png': blobP }) ])
+    .then(() => flashBtn(btn, '✓ Copiada — pegala en WhatsApp', true))
+    .catch(err => {
+      showError('No pude copiar la imagen al portapapeles (' + (err && err.message ? err.message : err) + '). Probá con "Descargar imagen" o "Enviar".');
+    });
+}
+async function exportParte(share){
+  hideError();
+  let out;
+  try{
+    try{ await document.fonts.ready; }catch(e){}
+    out = drawParte();
+  }catch(e){
+    showError('No pude armar la imagen del parte (' + e.message + '). Contame qué teléfono o navegador usás y lo reviso.');
+    return;
+  }
+  let blob;
+  try{ blob = await canvasBlob(out.cv); }
+  catch(e){
+    showError('No pude generar la imagen: ' + e.message + '. Probá con menos filas o avisame.');
+    return;
+  }
+  if (share && navigator.canShare){
+    try{
+      const file = new File([blob], out.name, { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })){
+        await navigator.share({ files: [file], title: 'Parte de limpieza' });
+        return;
+      }
+    }catch(e){
+      if (e && e.name === 'AbortError') return;  // el usuario cerró el menú de compartir
+      /* si compartir falla, bajamos el archivo igual */
+    }
+  }
+  forceDownload(blob, out.name);
+}
+
+/* ================= pestañas ================= */
+const tabBtns = { hoy: $('tabBtnHoy'), tareas: $('tabBtnTareas'), cal: $('tabBtnCal'), hist: $('tabBtnHist') };
+const panels  = { hoy: $('panelHoy'),  tareas: $('panelTareas'),  cal: $('panelCal'),  hist: $('panelHist') };
+function showTab(name){
+  for (const k of Object.keys(panels)){
+    panels[k].classList.toggle('on', k === name);
+    tabBtns[k].classList.toggle('on', k === name);
+  }
+}
+tabBtns.hoy.addEventListener('click', () => showTab('hoy'));
+tabBtns.tareas.addEventListener('click', () => showTab('tareas'));
+tabBtns.cal.addEventListener('click', () => showTab('cal'));
+tabBtns.hist.addEventListener('click', () => { renderHist(); showTab('hist'); });
+
+/* ================= eventos ================= */
+const drop = $('drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); handleFiles(e.dataTransfer.files); });
+const HINTS = { 'fi-arr':'arrival', 'fi-dep':'departure', 'fi-inh':'inhouse' };
+for (const id of ['fileInput','fi-arr','fi-dep','fi-inh']){
+  $(id).addEventListener('change', e => { handleFiles(e.target.files, HINTS[id]); e.target.value = ''; });
+}
+$('btnXlsTareas').addEventListener('click', exportTareasXlsx);
+$('btnXlsCal').addEventListener('click', exportCalXlsx);
+$('btnParteCopy').addEventListener('click', e => copyParteImage(e.currentTarget));
+$('btnImgTareasCopy').addEventListener('click', e => copyParteImage(e.currentTarget));
+$('btnParte').addEventListener('click', () => exportParte(true));
+$('btnImgTareas').addEventListener('click', () => exportParte(true));
+$('btnParteDl').addEventListener('click', () => exportParte(false));
+$('btnImgTareasDl').addEventListener('click', () => exportParte(false));
+$('sortPrio').addEventListener('click', () => { sortMode='prio'; setSortBtn('sortPrio'); renderTareas(); });
+$('sortHab').addEventListener('click', () => { sortMode='hab'; setSortBtn('sortHab'); renderTareas(); });
+$('sortAlf').addEventListener('click', () => { sortMode='alf'; setSortBtn('sortAlf'); renderTareas(); });
+function setSortBtn(on){
+  for (const id of ['sortPrio','sortHab','sortAlf']) $(id).classList.toggle('on', id === on);
+}
+$('btnXlsHist').addEventListener('click', exportHistXlsx);
+$('btnReset').addEventListener('click', resetAll);
+$('notesTareas').addEventListener('input', saveState);
+$('notesCal').addEventListener('input', saveState);
+
+/* arranque: recuperar lo de la sesión anterior */
+bootDone = true;
+loadState();
+renderHist();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const b = document.getElementById('btnInstall');
+  if (b) b.style.display = 'inline-block';
+});
+document.getElementById('btnInstall').addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  document.getElementById('btnInstall').style.display = 'none';
+});
+window.addEventListener('appinstalled', () => {
+  const b = document.getElementById('btnInstall');
+  if (b) b.style.display = 'none';
+});
+</script>
+</body>
+</html>

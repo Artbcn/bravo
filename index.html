@@ -676,6 +676,14 @@ function removeExtraTowel(idx){
   lsSet(extraTwKey(), list);
 }
 
+/* limpiezas y toallas AUTOMÁTICAS que se quitaron a mano para el día del parte (se pueden restaurar) */
+const hiddenClKey = () => 'brabo-hidecl-' + tareasISO;
+const hiddenTwKey = () => 'brabo-hidetw-' + tareasISO;
+const hiddenClients = () => lsGet(hiddenClKey(), []);
+const hiddenTowels  = () => lsGet(hiddenTwKey(), []);
+function hideItem(key, hab){ const l = lsGet(key, []); if (!l.includes(hab)){ l.push(hab); lsSet(key, l); } }
+function unhideItem(key, hab){ lsSet(key, lsGet(key, []).filter(h => h !== hab)); }
+
 /* ---- estado completo: sobrevive al cierre del navegador y al reinicio de la PC ---- */
 const SKEY = 'brabo-state';
 const HKEY = 'brabo-hist-';
@@ -743,7 +751,7 @@ function resetAll(){
   if (!confirm('¿Borrar todo lo cargado y empezar un día nuevo?\n\nSe van a borrar: los informes cargados, las tareas, los comentarios, las notas y las confirmaciones de hoy.\n\nEl HISTORIAL de días anteriores NO se toca.')) return;
   try{
     localStorage.removeItem(SKEY);
-    for (const k of [confKey(), slotKey(), extraKey(), extraTwKey()]) localStorage.removeItem(k);
+    for (const k of [confKey(), slotKey(), extraKey(), extraTwKey(), hiddenClKey(), hiddenTwKey()]) localStorage.removeItem(k);
   }catch(e){}
   location.reload();
 }
@@ -1123,15 +1131,20 @@ const clientDates = s => s.clients;
    se usan sus cifras oficiales en vez de contar sobre el In House. */
 function forecastCounts(day, ref){
   let t = 0, c = 0, a = 0, d = 0;
+  const dISO = toISO(day);
+  /* mismas reglas que la lista del día: lo quitado a mano o marcado "No quiere" no cuenta */
+  const hideC = new Set((lsGet('brabo-hidecl-' + dISO, []) || []).map(String));
+  const hideT = new Set((lsGet('brabo-hidetw-' + dISO, []) || []).map(String));
+  const conf = lsGet('brabo-conf-' + dISO, {}) || {};
+  const noQuiere = (hab) => conf[hab + '|c'] === 'no';
   for (const g of guests){
     const s = schedule(g);
-    t += towelDates(s).filter(x => same(x, day)).length;
-    c += clientDates(s).filter(x => same(x, day)).length;
+    if (towelDates(s).some(x => same(x, day)) && !hideT.has(String(g.hab))) t++;
+    if (clientDates(s).some(x => same(x, day)) && !hideC.has(String(g.hab)) && !noQuiere(g.hab)) c++;
     if (same(g.checkin, day))  a++;
     if (same(g.checkout, day)) d++;
   }
-  const dISO = toISO(day);
-  const nExtraC = (lsGet('brabo-extra-' + dISO, []) || []).length;
+  const nExtraC = (lsGet('brabo-extra-' + dISO, []) || []).filter(e => !noQuiere('x' + e.hab)).length;
   const nExtraT = (lsGet('brabo-extra-tw-' + dISO, []) || []).length;
   c += nExtraC;
   t += nExtraT;
@@ -1213,11 +1226,12 @@ function exportCalXlsx(){
 /* ================= HOY · MENSAJES ================= */
 function eventsToday(){
   const ref = tareasDate();
-  const towels = [], clients = [];
+  const towels = [], clients = [], removedTowels = [], removedClients = [];
+  const htw = hiddenTowels(), hcl = hiddenClients();
   for (const g of guests){
     const s = schedule(g);
-    if (towelDates(s).some(d => same(d, ref))) towels.push(g);
-    if (clientDates(s).some(d => same(d, ref))) clients.push(g);
+    if (towelDates(s).some(d => same(d, ref))){ if (htw.includes(g.hab)) removedTowels.push(g); else towels.push(g); }
+    if (clientDates(s).some(d => same(d, ref))){ if (hcl.includes(g.hab)) removedClients.push(g); else clients.push(g); }
   }
   const byHab = (a,b) => a.hab.localeCompare(b.hab, undefined, {numeric:true});
   towels.sort(byHab); clients.sort(byHab);
@@ -1234,14 +1248,14 @@ function eventsToday(){
     cl.push({ g: { hab: e.hab, huesped: e.huesped }, hora: slotFor('x' + e.hab, e.hora), extra: true, idx });
   });
   cl.sort((a, b) => a.g.hab.localeCompare(b.g.hab, undefined, {numeric:true}));
-  return { towels: tw, clients: cl };
+  return { towels: tw, clients: cl, removedTowels, removedClients };
 }
 function renderHoy(){
   const hasExtras = extraCleans().length > 0 || extraTowels().length > 0;
   if (!guests.length && !hasExtras){ $('hoyBody').style.display = 'none'; $('hoyHint').style.display = 'block'; return; }
   $('hoyHint').style.display = 'none';
   $('hoyBody').style.display = 'block';
-  const { towels, clients } = eventsToday();
+  const { towels, clients, removedTowels, removedClients } = eventsToday();
 
   const lt = $('listTowels'); lt.innerHTML = '';
   if (!towels.length) lt.innerHTML = '<div class="none">Sin cambios de toalla para el día del parte.</div>';
@@ -1257,12 +1271,14 @@ function renderHoy(){
       <span class="acts">
         <button class="conf${done?' on':''}">${done?'✓ Confirmado':'Pendiente'}</button>
         <button class="msg-btn">Copiar</button>
-        ${g.extra ? '<button class="del-extra" title="Quitar este cambio de toalla extra">✕</button>' : ''}
+        <button class="del-extra" title="Quitar este cambio de toalla">✕</button>
       </span>`;
     const msg = () => fillTpl($('tplTowel').value, g.hab, TOWEL_WINDOW);
     row.querySelector('.conf').addEventListener('click', () => { toggleConf(tid, 't', 'ok'); renderHoy(); });
     row.querySelector('.msg-btn').addEventListener('click', e => copyText(msg(), e.target));
-    if (g.extra) row.querySelector('.del-extra').addEventListener('click', () => { removeExtraTowel(g.idx); toast('Se sacó la toalla extra del apto ' + g.hab, 'rm'); renderHoy(); refreshPrev(); saveState(); });
+    row.querySelector('.del-extra').addEventListener('click', () => {
+      if (g.extra) removeExtraTowel(g.idx); else hideItem(hiddenTwKey(), g.hab);
+      toast('Se sacó la toalla del apto ' + g.hab, 'rm'); renderHoy(); refreshPrev(); saveState(); });
     lt.appendChild(row);
   }
   // botón para agregar un cambio de toalla extra (reprogramación)
@@ -1271,6 +1287,13 @@ function renderHoy(){
   addTw.textContent = '+ Agregar cambio de toalla para este día';
   addTw.addEventListener('click', openExtraTowelForm);
   lt.appendChild(addTw);
+  if (removedTowels.length){
+    const rem = document.createElement('div');
+    rem.style.cssText = 'margin-top:10px';
+    rem.innerHTML = removedTowels.map(g => `<div style="display:flex;align-items:center;gap:10px;padding:6px 2px;color:#a8a196;font-size:13px"><span style="text-decoration:line-through">${esc(g.hab)} · ${esc(g.huesped)||'—'}</span><button class="restore-tw" data-hab="${esc(g.hab)}" style="border:none;background:transparent;color:#0FA3A3;font-weight:700;cursor:pointer">↺ Restaurar</button></div>`).join('');
+    lt.appendChild(rem);
+    rem.querySelectorAll('.restore-tw').forEach(b => b.addEventListener('click', () => { unhideItem(hiddenTwKey(), b.dataset.hab); renderHoy(); refreshPrev(); saveState(); }));
+  }
 
   const lc = $('listClients'); lc.innerHTML = '';
   if (!clients.length) lc.innerHTML = '<div class="none">Sin limpiezas de cliente para el día del parte.</div>';
@@ -1289,14 +1312,16 @@ function renderHoy(){
         <button class="conf${st==='ok'?' on':''}">✓ Confirmado</button>
         <button class="nope-btn${st==='no'?' on':''}">✗ No quiere</button>
         <button class="msg-btn">Copiar</button>
-        ${c.extra ? '<button class="del-extra" title="Quitar esta limpieza extra">✕</button>' : ''}
+        <button class="del-extra" title="Quitar esta limpieza">✕</button>
       </span>`;
     const msg = () => fillTpl($('tplClean').value, g.hab, slotFor(cid, hora));
     row.querySelector('select').addEventListener('change', e => { setSlot(cid, e.target.value); renderHoy(); });
     row.querySelector('.conf').addEventListener('click', () => { toggleConf(cid, 'c', 'ok'); renderHoy(); });
     row.querySelector('.nope-btn').addEventListener('click', () => { toggleConf(cid, 'c', 'no'); renderHoy(); });
     row.querySelector('.msg-btn').addEventListener('click', e => copyText(msg(), e.target));
-    if (c.extra) row.querySelector('.del-extra').addEventListener('click', () => { removeExtraClean(c.idx); toast('Se sacó la limpieza extra del apto ' + c.g.hab, 'rm'); renderHoy(); refreshPrev(); saveState(); });
+    row.querySelector('.del-extra').addEventListener('click', () => {
+      if (c.extra) removeExtraClean(c.idx); else hideItem(hiddenClKey(), c.g.hab);
+      toast('Se sacó la limpieza del apto ' + c.g.hab, 'rm'); renderHoy(); refreshPrev(); saveState(); });
     lc.appendChild(row);
   }
   // botón para agregar una limpieza extra (reprogramación)
@@ -1305,6 +1330,13 @@ function renderHoy(){
   add.textContent = '+ Agregar limpieza para este día';
   add.addEventListener('click', openExtraForm);
   lc.appendChild(add);
+  if (removedClients.length){
+    const rem = document.createElement('div');
+    rem.style.cssText = 'margin-top:10px';
+    rem.innerHTML = removedClients.map(g => `<div style="display:flex;align-items:center;gap:10px;padding:6px 2px;color:#a8a196;font-size:13px"><span style="text-decoration:line-through">${esc(g.hab)} · ${esc(g.huesped)||'—'}</span><button class="restore-cl" data-hab="${esc(g.hab)}" style="border:none;background:transparent;color:#0FA3A3;font-weight:700;cursor:pointer">↺ Restaurar</button></div>`).join('');
+    lc.appendChild(rem);
+    rem.querySelectorAll('.restore-cl').forEach(b => b.addEventListener('click', () => { unhideItem(hiddenClKey(), b.dataset.hab); renderHoy(); refreshPrev(); saveState(); }));
+  }
 }
 /* pequeño formulario en línea para agregar una limpieza extra */
 function refreshPrev(){ if (guests.length) renderCal(); }

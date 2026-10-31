@@ -590,14 +590,74 @@ const fromISO = iso => { const [y,m,d] = String(iso).split('-').map(Number); ret
 const todayLocal = new Date(); todayLocal.setHours(0,0,0,0);
 $('refDate').value = toISO(todayLocal);
 function refDate(){ return fromISO($('refDate').value); }
+/* ===== guardado por "Día base": un juego de listados propio para cada fecha =====
+   Antes había un solo juego activo y, al cambiar de Día base y cargar otros informes, se perdía lo
+   anterior (incluso se borraba el historial del día). Ahora cada fecha guarda su propia copia y,
+   al volver a esa fecha, se restaura tal cual quedó. */
+const BASES_KEY = 'brabo-bases';
+let currentBaseISO = $('refDate').value;
+function getBases(){ try{ const raw = localStorage.getItem(BASES_KEY); return raw ? deserialize(raw) : {}; }catch(e){ return {}; } }
+function setBases(store){ try{ localStorage.setItem(BASES_KEY, serialize(store)); }catch(e){} }
+function saveBaseSnapshot(baseISO){
+  if (!baseISO) return;
+  const store = getBases();
+  store[baseISO] = {
+    tasks, guests,
+    chips: { arr: chipName('chip-arr'), dep: chipName('chip-dep'), inh: chipName('chip-inh') },
+    notesTareas: $('notesTareas') ? $('notesTareas').value : '',
+    savedAt: Date.now()
+  };
+  const keys = Object.keys(store).sort();
+  while (keys.length > 60){ delete store[keys.shift()]; }   /* hasta 2 meses de días base */
+  setBases(store);
+}
+function resetChipUI(id){
+  const c = $(id); if (!c) return;
+  c.querySelector('.fn').textContent = '—';
+  c.classList.remove('ok');
+}
+/* Si el Día base no tiene In House propio, toma el más reciente de un día anterior (sirve para proyectar toallas/limpiezas) */
+function heredarInHouse(){
+  if (guests.length) return false;
+  const base = $('refDate').value;
+  const store = getBases();
+  const previos = Object.keys(store).filter(k => k < base && (store[k].guests || []).length).sort();
+  if (!previos.length) return false;
+  const origen = previos[previos.length - 1];
+  guests = store[origen].guests;
+  let nombre = (store[origen].chips && store[origen].chips.inh && store[origen].chips.inh !== '—') ? store[origen].chips.inh : 'In House';
+  let fechaOrigen = fmtShort(fromISO(origen));
+  const m = /^\(heredado del (\d\d\/\d\d)\)\s*(.*)$/.exec(nombre);
+  if (m){ fechaOrigen = m[1]; nombre = m[2] || 'In House'; }
+  setChip('chip-inh', `(heredado del ${fechaOrigen}) ${nombre}`);
+  return true;
+}
 $('refDate').addEventListener('change', () => {
-  const prev = syncTareasDate();
-  /* si el informe cambió de fecha, movemos lo archivado en vez de dejar un duplicado */
-  if (prev !== tareasISO && archivedISO === prev){
-    try{ localStorage.removeItem(HKEY + prev); }catch(e){}
-    archivedISO = null;
+  const newBaseISO = $('refDate').value;
+  if (currentBaseISO && (tasks.length || guests.length)) saveBaseSnapshot(currentBaseISO);
+  const snap = getBases()[newBaseISO];
+  if (snap){
+    tasks = snap.tasks || []; guests = snap.guests || [];
+    if (snap.notesTareas != null) $('notesTareas').value = snap.notesTareas;
+    ['chip-arr','chip-dep','chip-inh'].forEach((id,i) => {
+      const txt = snap.chips && [snap.chips.arr, snap.chips.dep, snap.chips.inh][i];
+      if (txt && txt !== '—' && txt !== 'pendiente' && txt !== 'opcional') setChip(id, txt); else resetChipUI(id);
+    });
+  } else {
+    tasks = []; guests = [];
+    $('notesTareas').value = '';
+    ['chip-arr','chip-dep','chip-inh'].forEach(resetChipUI);
   }
+  heredarInHouse();
+  /* Arrival y Departure son propios de cada día: no se arrastran de un Día base al siguiente */
+  arrivalRows = null; departureRows = null;
+  currentBaseISO = newBaseISO;
+  const prev = syncTareasDate();
+  /* OJO: antes acá se BORRABA el historial del día anterior al cambiar la fecha. Ya no: el historial nunca se borra solo. */
+  if (prev !== tareasISO && archivedISO === prev) archivedISO = null;
   renderCal(); renderHoy(); saveState(); renderHist();
+  if (tasks.length){ renderTareas(); }
+  else { const h = $('tareasHint'), b = $('tareasBody'); if (h) h.style.display = 'block'; if (b) b.style.display = 'none'; }
 });
 
 /* fecha del informe: SIEMPRE la fecha base de arriba + 1 día. No se edita a mano:
@@ -701,6 +761,7 @@ function saveState(){
   };
   try{ localStorage.setItem(SKEY, serialize(st)); }
   catch(e){ showError('No pude guardar los datos: el navegador se quedó sin espacio. Bajá el Excel del historial y borrá días viejos en la pestaña Historial.'); }
+  saveBaseSnapshot(currentBaseISO || $('refDate').value);
   archiveDay();
 }
 function archiveDay(){
@@ -724,16 +785,20 @@ function loadState(){
   let st = null;
   try{ const raw = localStorage.getItem(SKEY); if (raw) st = deserialize(raw); }catch(e){}
   if (!st) return;
-  tasks = st.tasks || [];
-  guests = st.guests || [];
-  if (st.notesTareas) $('notesTareas').value = st.notesTareas;
-  if (st.notesCal) $('notesCal').value = st.notesCal;
   if (st.baseISO){ $('refDate').value = st.baseISO; }
   else if (st.tareasISO){ $('refDate').value = toISO(addDays(fromISO(st.tareasISO), -1)); }   /* versiones viejas */
+  currentBaseISO = $('refDate').value;
+  const snapB = getBases()[currentBaseISO];
+  tasks = (snapB ? snapB.tasks : st.tasks) || [];
+  guests = (snapB ? snapB.guests : st.guests) || [];
+  if (snapB && snapB.notesTareas != null) $('notesTareas').value = snapB.notesTareas;
+  else if (st.notesTareas) $('notesTareas').value = st.notesTareas;
+  if (st.notesCal) $('notesCal').value = st.notesCal;
   syncTareasDate();
   archivedISO = st.archivedISO || null;
-  if (st.chips){
-    for (const [id, txt] of [['chip-arr', st.chips.arr], ['chip-dep', st.chips.dep], ['chip-inh', st.chips.inh]]){
+  const chipsB = snapB ? snapB.chips : st.chips;
+  if (chipsB){
+    for (const [id, txt] of [['chip-arr', chipsB.arr], ['chip-dep', chipsB.dep], ['chip-inh', chipsB.inh]]){
       if (txt && txt !== '—' && txt !== 'pendiente' && txt !== 'opcional') setChip(id, txt);
     }
   }

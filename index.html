@@ -826,8 +826,20 @@ $('refDate').addEventListener('change', () => {
 let tareasISO = toISO(addDays(todayLocal, 1));
 let archivedISO = null;   /* bajo qué fecha quedó archivado lo que hay en pantalla */
 function tareasDate(){ return fromISO(tareasISO); }
+/* Fecha real del parte: la del día de las tareas (salida o llegada de cada fila), no la fecha de hoy ni la del Día base.
+   Si no hay tareas, cae en Día base + 1. */
+function parteDate(){
+  const cnt = new Map();
+  for (const t of tasks){
+    const d = (t.tipo === 'salida' ? t.salida : t.llegada) || t.salida || t.llegada;
+    if (d instanceof Date && !isNaN(d)){ const k = toISO(d); cnt.set(k, (cnt.get(k) || 0) + 1); }
+  }
+  let best = null, n = 0;
+  for (const [k, c] of cnt) if (c > n){ best = k; n = c; }
+  return best ? fromISO(best) : tareasDate();
+}
 function paintTareasDate(){
-  const txt = tareasDate().toLocaleDateString('es-ES', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'});
+  const txt = parteDate().toLocaleDateString('es-ES', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'});
   for (const id of ['tareasDateLbl', 'tareasDateLbl2']) $(id).textContent = txt;
 }
 /* recalcula el informe a partir de la base; devuelve la fecha anterior */
@@ -1162,9 +1174,13 @@ function buildTasks(){
     if (habsSalida.has(s.hab)) tasks.push(s);
   }
   tasks.forEach(t => { t.hora=''; t.cama=''; t.priori = defaultPriori(t); t.horaSalida=''; t.coment=''; });
-  /* informes nuevos = día nuevo: la base vuelve a hoy, así el informe sale para mañana */
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
-  setBaseDate(hoy);
+  /* El Día base NO se mueve solo (antes saltaba a hoy y mezclaba los listados de distintos días).
+     Si los informes cargados son de otro día que el que arma el Día base elegido, avisamos. */
+  paintTareasDate();
+  const pd = parteDate();
+  if (tasks.length && toISO(pd) !== tareasISO){
+    showError(`Ojo: estos informes son del ${fmtShort(pd)}, pero el Día base elegido arma el parte del ${fmtShort(tareasDate())}. Para que queden en su día, poné el Día base en ${fmtShort(addDays(pd, -1))} y volvé a soltarlos allí.`);
+  }
   archivedISO = null;
   renderTareas();
   saveState();
@@ -1249,7 +1265,7 @@ function tareasSheet(list, dateObj, notesText){
   return ws;
 }
 function exportTareasXlsx(){
-  const td = tareasDate();
+  const td = parteDate();
   const ws = tareasSheet(sortTasks(), td, $('notesTareas').value);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Tareas Pisos');
@@ -1632,7 +1648,7 @@ $('copyAllCl').addEventListener('click', e => {
 
 /* ================= IMAGEN DEL PARTE ================= */
 function drawParte(){
-  const td = tareasDate();
+  const td = parteDate();
   const ref = td;   /* todo el parte corresponde al mismo día: el del informe */
   const list = tasks.length ? sortTasks() : [];
   const { towels, clients } = (guests.length || extraCleans().length) ? eventsToday() : { towels: [], clients: [] };

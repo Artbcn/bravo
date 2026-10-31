@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
@@ -358,6 +359,7 @@ tr.hl td{background:#FDFBF4}
     <input type="date" id="refDate">
     <span class="base-note">todo el parte —tareas, toallas y limpiezas— sale para el día siguiente</span>
   </div>
+  <button id="btnBaseNube" title="Si los listados de este Día base se ven mal, vuelve a bajar de la nube lo que se guardó para este día.">☁ Restaurar este día</button>
   <button id="btnReset" title="Borra los informes cargados y las tareas en pantalla. El historial no se toca.">🗑 Borrar todo</button>
   <button id="btnInstall">⤓ Instalar app</button>
 </header>
@@ -539,6 +541,165 @@ function serialize(o){
 }
 function deserialize(s){
   return JSON.parse(s, (k, v) => (v && typeof v === 'object' && typeof v.__d === 'number') ? new Date(v.__d) : v);
+}
+
+/* ============================================================
+   SINCRONIZACIÓN EN LA NUBE (Supabase) — solo para BRABO.
+   Usa su PROPIA tabla (brabo_kv), separada de la de ART Apartments.
+   Todo lo que empieza con 'brabo-' se guarda además en la nube; al abrir se baja lo compartido.
+   Protecciones: una pestaña/PC con datos viejos NO pisa lo que otra persona cargó (se avisa y queda copia local).
+   ============================================================ */
+const SB_URL = 'https://nevhnfkbrwwelmokspzt.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ldmhuZmticnd3ZWxtb2tzcHp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3MzA0NDgsImV4cCI6MjEwMDMwNjQ0OH0.fk05FBrzZZoqtBvz--jeWBWiHmbi6U-rSY4uzJXCMQY';
+const SB_TABLE = 'brabo_kv';
+const SB_PREFIX = 'brabo-';
+const SB_TAB = Math.random().toString(36).slice(2);
+let sb = null;
+try{ if (window.supabase){ sb = window.supabase.createClient(SB_URL, SB_KEY); } }catch(e){ sb = null; }
+const _lsSet = localStorage.setItem.bind(localStorage);
+const _lsRemove = localStorage.removeItem.bind(localStorage);
+const SB_Q = {}, SB_SEEN_K = {}, SB_BASES_SEEN = {}; let SB_SEEN = '', SB_READY = false;
+
+function sbPush(k, valStr){
+  if (!sb || !SB_READY) return;
+  if (k === 'brabo-bases'){ sbPushBases(k, valStr); return; }
+  let v; try{ v = JSON.parse(valStr); }catch(e){ v = valStr; }
+  SB_Q[k] = (SB_Q[k] || Promise.resolve()).then(async () => {
+    try{
+      const { data: rem } = await sb.from(SB_TABLE).select('v,src,updated_at').eq('k', k).maybeSingle();
+      const visto = SB_SEEN_K[k] || SB_SEEN || '';
+      if (rem && rem.src !== SB_TAB && Date.parse(rem.updated_at) > Date.parse(visto || 0) && JSON.stringify(rem.v) !== JSON.stringify(v)){
+        try{ _lsSet('bk-remote-' + k + '-' + Date.now(), JSON.stringify(rem.v)); }catch(e){}
+        try{ _lsSet('bk-local-' + k + '-' + Date.now(), valStr); }catch(e){}
+        showSyncBanner('⚠️ Alguien cargó datos nuevos y esta pestaña estaba vieja. NO los pisé. Tocá acá para recargar (tus últimos cambios de esta pestaña quedaron en copia local).', true);
+        return;
+      }
+      const ts = new Date().toISOString();
+      const { error } = await sb.from(SB_TABLE).upsert({ k, v, src: SB_TAB, updated_at: ts });
+      if (!error) SB_SEEN_K[k] = ts;
+    }catch(e){}
+  });
+}
+/* 'brabo-bases' guarda un juego de listados por cada Día base: se fusiona día por día (gana el más nuevo),
+   salvo que otra persona haya cambiado ESE día después de que lo bajamos: ahí no se pisa. */
+async function sbPushBases(k, valStr){
+  let mio; try{ mio = JSON.parse(valStr); }catch(e){ return; }
+  try{
+    const { data } = await sb.from(SB_TABLE).select('v').eq('k', k).maybeSingle();
+    const fusion = Object.assign({}, (data && data.v) || {});
+    let choque = false;
+    for (const [dia, snap] of Object.entries(mio)){
+      const rem = fusion[dia];
+      if (rem && (rem.savedAt || 0) > (SB_BASES_SEEN[dia] || 0) && (rem.savedAt || 0) !== (snap.savedAt || 0)
+          && JSON.stringify(rem.tasks || null) !== JSON.stringify(snap.tasks || null)){
+        choque = true;
+        try{ _lsSet('bk-local-base-' + dia + '-' + Date.now(), JSON.stringify(snap)); }catch(e){}
+        continue;
+      }
+      if (!rem || (snap.savedAt || 0) >= (rem.savedAt || 0)) fusion[dia] = snap;
+    }
+    if (choque) showSyncBanner('⚠️ Otra persona cargó listados de un día y esta pestaña estaba vieja. NO los pisé. Tocá acá para recargar (tu copia quedó guardada aparte).', true);
+    const claves = Object.keys(fusion).sort();
+    while (claves.length > 60) delete fusion[claves.shift()];
+    const { error } = await sb.from(SB_TABLE).upsert({ k, v: fusion, src: SB_TAB, updated_at: new Date().toISOString() });
+    if (error) return;
+    for (const [dia, snap] of Object.entries(fusion)) SB_BASES_SEEN[dia] = snap.savedAt || 0;
+    let actual = {}; try{ actual = JSON.parse(localStorage.getItem(k) || '{}'); }catch(e){}
+    for (const [dia, snap] of Object.entries(fusion)){
+      if (!actual[dia] || (snap.savedAt || 0) > (actual[dia].savedAt || 0)) actual[dia] = snap;
+    }
+    _lsSet(k, JSON.stringify(actual));
+  }catch(e){}
+}
+function sbDel(k){ if (!sb || !SB_READY) return; sb.from(SB_TABLE).delete().eq('k', k).then(()=>{}, ()=>{}); }
+localStorage.setItem = function(k, val){
+  _lsSet(k, val);
+  if (sb && typeof k === 'string' && k.startsWith(SB_PREFIX)) sbPush(k, val);
+};
+localStorage.removeItem = function(k){
+  _lsRemove(k);
+  if (sb && typeof k === 'string' && k.startsWith(SB_PREFIX)) sbDel(k);
+};
+/* al arrancar: bajamos lo compartido ANTES de cargar el estado. Si no se puede bajar, NO publicamos nada
+   (lo local podría ser viejo y pisar el trabajo de otra persona). */
+async function sbHydrate(){
+  if (!sb) return true;
+  for (let intento = 0; intento < 3; intento++){
+    try{
+      const { data, error } = await sb.from(SB_TABLE).select('k,v,updated_at');
+      if (error || !data) throw error || new Error('sin datos');
+      const enNube = new Set();
+      for (const row of data){
+        enNube.add(row.k);
+        try{
+          if (row.k === 'brabo-bases' && row.v && typeof row.v === 'object'){
+            let loc = {}; try{ loc = deserialize(localStorage.getItem('brabo-bases') || '{}') || {}; }catch(e){}
+            const rem = deserialize(JSON.stringify(row.v));
+            const fus = Object.assign({}, rem);
+            for (const [d, sn] of Object.entries(loc)) if (!fus[d] || (sn.savedAt || 0) > (fus[d].savedAt || 0)) fus[d] = sn;
+            _lsSet(row.k, serialize(fus));
+            for (const [d, sn] of Object.entries(row.v)) SB_BASES_SEEN[d] = (sn && sn.savedAt) || 0;
+          } else {
+            _lsSet(row.k, JSON.stringify(row.v));
+          }
+        }catch(e){}
+        SB_SEEN_K[row.k] = row.updated_at;
+        if (Date.parse(row.updated_at) > Date.parse(SB_SEEN || 0)) SB_SEEN = row.updated_at;
+      }
+      SB_READY = true;
+      /* primera vez en este equipo: lo que solo existe en este navegador se sube a la nube */
+      for (let i = 0; i < localStorage.length; i++){
+        const k = localStorage.key(i);
+        if (!k || !k.startsWith(SB_PREFIX) || enNube.has(k)) continue;
+        const val = localStorage.getItem(k);
+        if (val != null) sbPush(k, val);
+      }
+      const lb = localStorage.getItem('brabo-bases');
+      if (lb && enNube.has('brabo-bases')) sbPushBases('brabo-bases', lb);
+      return true;
+    }catch(e){
+      if (intento < 2) await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+  return false;
+}
+function sbSubscribe(){
+  if (!sb) return;
+  try{
+    sb.channel('brabo_kv_ch')
+      .on('postgres_changes', { event: '*', schema: 'public', table: SB_TABLE }, payload => {
+        const row = payload.new || payload.old || {};
+        if (row.src === SB_TAB) return;
+        showSyncBanner();
+      })
+      .subscribe();
+  }catch(e){}
+}
+async function sbCheckRemote(){
+  if (!sb || !SB_SEEN) return;
+  try{
+    const { data } = await sb.from(SB_TABLE).select('k,src,updated_at').gt('updated_at', SB_SEEN).neq('src', SB_TAB).limit(1);
+    if (data && data.length) showSyncBanner();
+  }catch(e){}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sbCheckRemote(); });
+window.addEventListener('focus', sbCheckRemote);
+window.addEventListener('online', sbCheckRemote);
+setInterval(() => { if (!document.hidden) sbCheckRemote(); }, 60000);
+function showSyncBanner(msg, alerta){
+  let b = document.getElementById('sbSyncBanner');
+  if (b && msg) b.textContent = msg;
+  if (b && alerta) b.style.background = '#c0392b';
+  if (!b){
+    b = document.createElement('div');
+    b.id = 'sbSyncBanner';
+    b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#0FA3A3;color:#fff;padding:12px 16px;text-align:center;font-weight:700;cursor:pointer;box-shadow:0 -2px 10px rgba(0,0,0,.25)';
+    b.textContent = msg || '🔄 Tu compañera actualizó datos — tocá acá para verlos';
+    if (alerta) b.style.background = '#c0392b';
+    b.addEventListener('click', () => location.reload());
+    document.body.appendChild(b);
+  }
+  b.style.display = 'block';
 }
 
 /* ================= estado ================= */
@@ -1902,10 +2063,37 @@ $('btnReset').addEventListener('click', resetAll);
 $('notesTareas').addEventListener('input', saveState);
 $('notesCal').addEventListener('input', saveState);
 
-/* arranque: recuperar lo de la sesión anterior */
-bootDone = true;
-loadState();
-renderHist();
+/* Restaurar el Día base actual desde la nube (guarda copia local de lo que había) */
+$('btnBaseNube').addEventListener('click', async () => {
+  const dia = $('refDate').value;
+  if (!sb){ alert('No hay conexión con la nube.'); return; }
+  try{
+    const { data, error } = await sb.from(SB_TABLE).select('v').eq('k', 'brabo-bases').maybeSingle();
+    if (error) throw error;
+    const rem = data && data.v && data.v[dia];
+    if (!rem || !((rem.tasks || []).length || (rem.guests || []).length)){ alert('En la nube no hay listados guardados para el ' + fmtShort(fromISO(dia)) + '.'); return; }
+    if (!confirm('Volver a bajar de la nube los listados del Día base ' + fmtShort(fromISO(dia)) + ' (' + ((rem.tasks||[]).length) + ' tareas)?\n\nLo que ves ahora para ese día se reemplaza (queda una copia local por las dudas).')) return;
+    const loc = getBases();
+    if (loc[dia]) { try{ _lsSet('bk-local-base-' + dia + '-' + Date.now(), serialize(loc[dia])); }catch(e){} }
+    const r = deserialize(JSON.stringify(rem));
+    r.savedAt = Date.now();
+    loc[dia] = r; setBases(loc);
+    location.reload();
+  }catch(e){ alert('No pude bajar de la nube: ' + (e.message || e)); }
+});
+
+/* arranque: bajar lo compartido y recuperar lo de la sesión anterior */
+(async function boot(){
+  const sincronizado = await sbHydrate();
+  bootDone = true;
+  loadState();
+  if (heredarInHouse()){ renderCal(); renderHoy(); }
+  renderHist();
+  if (!sincronizado){
+    showError('No pude bajar lo que cargó tu compañera (se cortó la conexión al abrir). Por las dudas, NO publiqué nada — así no le piso el trabajo a nadie. Recargá la página (Ctrl+Shift+R) antes de tocar algo.');
+  }
+  sbSubscribe();
+})();
 </script>
 <script>
 if ('serviceWorker' in navigator) {

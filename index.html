@@ -1173,7 +1173,14 @@ function buildTasks(){
   for (const s of salidas){
     if (habsSalida.has(s.hab)) tasks.push(s);
   }
-  tasks.forEach(t => { t.hora=''; t.cama=''; t.priori = defaultPriori(t); t.horaSalida=''; t.coment=''; });
+  tasks.forEach(t => {
+    t.hora=''; t.cama=''; t.priori = defaultPriori(t); t.horaSalida=''; t.coment='';
+    /* sofá cama automático: solo en LLEGADAS (se prepara para el que entra) con 3 o más huéspedes en total */
+    if (t.tipo === 'llegada'){
+      const totalPax = (parseInt(t.ac)||0) + (parseInt(t.ju)||0) + (parseInt(t.ni)||0) + (parseInt(t.ini)||0);
+      t.cama = totalPax > 2 ? 'montar sofá cama' : '';
+    }
+  });
   /* El Día base NO se mueve solo (antes saltaba a hoy y mezclaba los listados de distintos días).
      Si los informes cargados son de otro día que el que arma el Día base elegido, avisamos. */
   paintTareasDate();
